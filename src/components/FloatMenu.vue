@@ -1,12 +1,20 @@
 <template>
   <Teleport to="body">
     <!-- Menu Button -->
-    <button 
+    <button
       class="menu-btn"
       :class="{ 'active': isOpen }"
       @click="toggleMenu"
     >
-      <span class="menu-icon">{{ isOpen ? '✕' : '☰' }}</span>
+      <svg v-if="!isOpen" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+      <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
     </button>
 
     <!-- Menu Dropdown -->
@@ -14,22 +22,26 @@
       <div v-if="isOpen" class="menu-dropdown">
         <!-- Config Section -->
         <div class="menu-section">
-          <div 
+          <div
             class="menu-section-header clickable"
             @click="configExpanded = !configExpanded"
           >
-            <span class="menu-section-icon">⚙️</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.67 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.67a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
             <span class="menu-section-title">API 配置</span>
             <span v-if="hasConfig" class="menu-status configured">已配置</span>
             <span v-else class="menu-status unconfigured">未配置</span>
-            <span class="chevron" :class="{ expanded: configExpanded || !hasConfig }">
-              {{ configExpanded || !hasConfig ? '▼' : '▶' }}
-            </span>
+            <svg class="chevron" :class="{ expanded: configExpanded || !hasConfig }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
           </div>
-          
+
           <Transition name="expand">
             <div v-if="configExpanded || !hasConfig" class="menu-form">
               <div class="form-row">
+                <label>模型厂商</label>
                 <select v-model="localConfig.provider" @change="emitUpdate">
                   <option value="">选择厂商</option>
                   <option value="OpenAI">OpenAI</option>
@@ -39,34 +51,37 @@
                   <option value="其他">其他</option>
                 </select>
               </div>
-              
+
               <div class="form-row">
-                <input 
-                  v-model="localConfig.model" 
-                  type="text" 
-                  placeholder="模型名称，如：gpt-4o-mini"
+                <label>模型名称</label>
+                <input
+                  v-model="localConfig.model"
+                  type="text"
+                  placeholder="如：gpt-4o-mini"
                   @input="emitUpdate"
                 />
               </div>
-              
+
               <div class="form-row">
-                <input 
-                  v-model="localConfig.baseURL" 
-                  type="text" 
-                  placeholder="Base URL，如：https://api.openai.com/v1"
+                <label>Base URL</label>
+                <input
+                  v-model="localConfig.baseURL"
+                  type="text"
+                  placeholder="如：https://api.openai.com/v1"
                   @input="emitUpdate"
                 />
               </div>
-              
+
               <div class="form-row">
-                <input 
-                  v-model="localConfig.apiKey" 
-                  type="password" 
-                  placeholder="API Key"
+                <label>API Key</label>
+                <input
+                  v-model="localConfig.apiKey"
+                  type="password"
+                  placeholder="sk-xxxxxxxx"
                   @input="emitUpdate"
                 />
               </div>
-              
+
               <button v-if="hasConfig" class="btn-clear" @click="handleClear">
                 清空配置
               </button>
@@ -80,7 +95,10 @@
         <!-- History Section -->
         <div class="menu-section">
           <div class="menu-section-header">
-            <span class="menu-section-icon">📜</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
             <span class="menu-section-title">历史记录</span>
             <span v-if="history.length > 0" class="menu-badge">{{ history.length }}</span>
           </div>
@@ -90,9 +108,9 @@
           </div>
 
           <div v-else class="menu-history-list">
-            <div 
-              v-for="item in history.slice(0, 5)" 
-              :key="item.id" 
+            <div
+              v-for="item in history.slice(0, 5)"
+              :key="item.id"
               class="menu-history-item"
             >
               <div class="menu-history-info" @click="handleLoad(item)">
@@ -101,20 +119,35 @@
               </div>
               <div class="menu-history-actions">
                 <button class="icon-btn" @click.stop="handleView(item)" title="查看">
-                  👁
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
                 </button>
                 <button class="icon-btn" @click.stop="handleCopy(item)" title="复制">
-                  {{ copiedId === item.id ? '✓' : '📋' }}
+                  <svg v-if="copiedId !== item.id" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                  </svg>
+                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
                 </button>
                 <button class="icon-btn" @click.stop="handleRename(item)" title="重命名">
-                  ✏️
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
                 </button>
                 <button class="icon-btn danger" @click.stop="handleDelete(item)" title="删除">
-                  🗑
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                  </svg>
                 </button>
               </div>
             </div>
-            
+
             <button v-if="history.length > 5" class="btn-more" @click="emit('openHistory')">
               查看全部 {{ history.length }} 条 →
             </button>
@@ -146,11 +179,11 @@ const props = defineProps({
 })
 
 const emit = defineEmits([
-  'update:config', 
-  'clear', 
-  'load', 
-  'rename', 
-  'delete', 
+  'update:config',
+  'clear',
+  'load',
+  'rename',
+  'delete',
   'copy',
   'openHistory',
   'view'
@@ -179,7 +212,6 @@ watch(() => props.config, (newConfig) => {
   }
 }, { immediate: true, deep: true })
 
-// Auto-close menu when config becomes valid
 watch(hasConfig, (valid) => {
   if (valid && isOpen.value) {
     isOpen.value = false
@@ -248,7 +280,6 @@ function handleDelete(item) {
   }
 }
 
-// 键盘事件处理：ESC 关闭菜单
 function handleKeydown(e) {
   if (e.key === 'Escape' && isOpen.value) {
     isOpen.value = false
@@ -263,7 +294,6 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
 })
 
-// Expose for auto show
 function checkShouldShow() {
   if (!props.config || !props.config.apiKey) {
     isOpen.value = true
@@ -282,45 +312,52 @@ defineExpose({
   position: fixed;
   top: 24px;
   right: 24px;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
-  background: white;
-  border: none;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  background: var(--bg-elevated);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
   cursor: pointer;
   z-index: 100;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s ease;
-  font-size: 1.2rem;
+  transition: all 0.3s var(--ease-out);
+  color: var(--text-primary);
 }
 
 .menu-btn:hover {
   transform: scale(1.05);
-  box-shadow: 0 6px 28px rgba(0,0,0,0.2);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--border-hover);
 }
 
 .menu-btn.active {
   background: var(--text-primary);
   color: white;
+  border-color: var(--text-primary);
 }
 
 /* Dropdown */
 .menu-dropdown {
   position: fixed;
-  top: 84px;
+  top: 80px;
   right: 24px;
-  width: 360px;
+  width: 380px;
   max-height: 80vh;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 12px 48px rgba(0,0,0,0.2);
+  background: var(--bg-elevated);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-xl);
   z-index: 200;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border: 1px solid var(--border);
 }
 
 .menu-section {
@@ -330,7 +367,7 @@ defineExpose({
 .menu-section-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 16px;
 }
 
@@ -338,10 +375,11 @@ defineExpose({
   cursor: pointer;
   padding: 4px 0;
   margin-bottom: 0;
+  user-select: none;
 }
 
 .menu-section-header.clickable:hover {
-  opacity: 0.8;
+  opacity: 0.7;
 }
 
 .menu-section-icon {
@@ -350,24 +388,24 @@ defineExpose({
 
 .menu-section-title {
   font-weight: 600;
-  font-size: 1rem;
+  font-size: 0.95rem;
   flex: 1;
 }
 
 .menu-status {
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 3px 8px;
-  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
 }
 
 .menu-status.configured {
-  background: #e8f5e9;
+  background: rgba(52, 199, 89, 0.12);
   color: #2e7d32;
 }
 
 .menu-status.unconfigured {
-  background: #fff3e0;
+  background: rgba(255, 149, 0, 0.12);
   color: #ef6c00;
 }
 
@@ -381,17 +419,12 @@ defineExpose({
 }
 
 .chevron {
-  font-size: 0.65rem;
-  color: var(--text-secondary);
-  transition: transform 0.2s ease;
+  color: var(--text-tertiary);
+  transition: transform 0.25s var(--ease-out);
 }
 
 .chevron.expanded {
-  transform: rotate(0deg);
-}
-
-.chevron:not(.expanded) {
-  transform: rotate(-90deg);
+  transform: rotate(180deg);
 }
 
 /* Form */
@@ -399,18 +432,30 @@ defineExpose({
   margin-top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+}
+
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-row label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-secondary);
 }
 
 .form-row input,
 .form-row select {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border-light);
-  border-radius: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   font-size: 0.9rem;
   font-family: inherit;
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
   color: var(--text-primary);
   transition: all 0.2s ease;
 }
@@ -419,11 +464,11 @@ defineExpose({
 .form-row select:focus {
   outline: none;
   border-color: var(--accent);
-  background: white;
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .form-row input::placeholder {
-  color: #a1a1a6;
+  color: var(--text-tertiary);
 }
 
 .btn-clear {
@@ -435,6 +480,7 @@ defineExpose({
   padding: 8px 0;
   text-align: left;
   font-family: inherit;
+  font-weight: 500;
 }
 
 .btn-clear:hover {
@@ -445,13 +491,14 @@ defineExpose({
 .menu-divider {
   height: 1px;
   background: var(--border-light);
+  margin: 0 20px;
 }
 
 /* History */
 .menu-empty {
   text-align: center;
-  padding: 20px;
-  color: var(--text-secondary);
+  padding: 24px;
+  color: var(--text-tertiary);
   font-size: 0.9rem;
 }
 
@@ -468,13 +515,15 @@ defineExpose({
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  background: var(--bg-secondary);
-  border-radius: 10px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
   transition: all 0.2s ease;
+  border: 1px solid transparent;
 }
 
 .menu-history-item:hover {
-  background: var(--border-light);
+  border-color: var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .menu-history-info {
@@ -489,40 +538,42 @@ defineExpose({
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text-primary);
 }
 
 .menu-history-time {
   font-size: 0.75rem;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   margin-top: 2px;
 }
 
 .menu-history-actions {
   display: flex;
-  gap: 4px;
+  gap: 2px;
 }
 
 .icon-btn {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 0.85rem;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  color: var(--text-secondary);
 }
 
 .icon-btn:hover {
-  background: var(--border-light);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .icon-btn.danger:hover {
-  background: #ff3b30;
-  color: white;
+  background: rgba(255, 59, 48, 0.1);
+  color: #ff3b30;
 }
 
 .btn-more {
@@ -531,24 +582,24 @@ defineExpose({
   color: var(--accent);
   font-size: 0.9rem;
   cursor: pointer;
-  padding: 8px;
+  padding: 10px;
   text-align: center;
   font-family: inherit;
   width: 100%;
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  transition: all 0.2s ease;
 }
 
 .btn-more:hover {
-  text-decoration: underline;
+  background: rgba(0, 113, 227, 0.05);
 }
 
 /* Overlay */
 .menu-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.2);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
   z-index: 150;
 }
 
@@ -565,18 +616,18 @@ defineExpose({
 
 .dropdown-enter-active,
 .dropdown-leave-active {
-  transition: all 0.3s ease;
+  transition: all 0.3s var(--ease-out);
 }
 
 .dropdown-enter-from,
 .dropdown-leave-to {
   opacity: 0;
-  transform: translateY(-10px);
+  transform: translateY(-10px) scale(0.98);
 }
 
 .expand-enter-active,
 .expand-leave-active {
-  transition: all 0.3s ease;
+  transition: all 0.3s var(--ease-out);
   overflow: hidden;
 }
 
