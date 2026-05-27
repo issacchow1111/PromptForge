@@ -1,6 +1,12 @@
+<div align="center">
+
 # PromptForge —— 提示词锻造工坊
 
 > 让每一句提示词，都精准命中 AI 的「理解穴位」。
+
+[English](#english) | 中文
+
+</div>
 
 ---
 
@@ -136,3 +142,152 @@ MIT License © 2025 issacchow1111
 ---
 
 > **PromptForge** —— 锻造提示词，释放 AI 的完整潜能。
+
+---
+
+<div id="english"></div>
+
+<div align="center">
+
+# PromptForge —— Prompt Engineering Workshop
+
+> Make every prompt precisely hit the AI's "understanding acupoint".
+
+中文 | [English](#english)
+
+</div>
+
+---
+
+## What is this?
+
+**PromptForge** is an **intelligent prompt optimization tool** designed for AI prompt engineers, product managers, content creators, and all heavy AI users.
+
+It's more than just a "polisher" — it's a **prompt architect** available 24/7. By leveraging large language models to deeply understand your original intent, it automatically fills logical gaps, standardizes expression structures, and strengthens output constraints, forging your "plain language" into **professional-grade prompts** that are structurally clear, semantically precise, and ready for production.
+
+---
+
+## Core Capabilities
+
+### 1. Intelligent Semantic Reconstruction
+Based on professional prompt engineering methodologies, automatically identifies and fixes:
+- **Ambiguous roles** → Clarify AI identity and capability boundaries
+- **Missing tasks** → Complete instruction logic chains
+- **Insufficient constraints** → Strengthen output format and quality requirements
+- **Semantic gaps** → Fill in context and example deficiencies
+
+### 2. Dual-Mode Result Preview
+- **Plain Text Mode**: Clean and crisp, copy and use with one click
+- **Markdown Render Mode**: Structured presentation with clear hierarchy
+
+### 3. Real-time Editing & Iteration
+Not satisfied with the optimized result? Supports **in-place editing**, what you see is what you get, save after editing.
+
+### 4. History Management
+- Automatically saves each optimization result with **custom naming**
+- Slide-out drawer-style history panel with one-click **view / load / copy / rename / delete**
+- Local persistent storage, survives page refreshes
+
+### 5. Multi-Vendor API Compatibility
+Supports any model service compatible with OpenAI Chat Completions API:
+- OpenAI (GPT-4o / GPT-4o-mini / o3-mini ...)
+- Anthropic Claude
+- Google Gemini
+- Alibaba Cloud Bailian, Volcano Engine, SiliconFlow, and other Chinese proxies
+- Self-hosted vLLM / Ollama local models
+
+Configure once, auto-remember, ready to use out of the box.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|------|------|
+| Frontend Framework | Vue 3 (Composition API) |
+| Build Tool | Vite 5 |
+| Styling | Native CSS + CSS Variables Theme System |
+| Markdown Rendering | marked + DOMPurify |
+| Data Persistence | localStorage |
+| Deployment | Pure static, Nginx / Docker / Vercel compatible |
+
+---
+
+## Quick Start
+
+```bash
+# Clone repository
+git clone https://github.com/issacchow1111/PromptForge.git
+cd PromptForge
+
+# Install dependencies
+npm install
+
+# Local development
+npm run dev
+
+# Build for production
+npm run build
+```
+
+Open browser and visit `http://localhost:5173`, click the menu in the top-right corner to configure your API info, then start optimizing.
+
+---
+
+## Use Cases
+
+| Scenario | Effect |
+|------|------|
+| **AI Art Prompt** | Optimize "draw a cat" into professional descriptions with style, composition, lighting, and materials |
+| **Code Generation** | Complete tech stack, constraints, output format — get it right the first time |
+| **Data Analysis** | Clarify statistical口径, output dimensions, visualization requirements |
+| **Content Creation** | Standardize article structure, tone, style, and target audience |
+| **Intelligent Customer Service** | Define role boundaries, knowledge scope, and refusal strategies |
+
+---
+
+## Project Structure
+
+```
+PromptForge/
+├── index.html              # Entry HTML
+├── vite.config.js          # Vite config
+├── package.json
+├── src/
+│   ├── main.js             # App entry
+│   ├── App.vue             # Root component
+│   ├── style.css           # Global styles & theme variables
+│   ├── components/         # Components directory
+│   │   ├── PromptInput.vue      # Prompt input area
+│   │   ├── ResultDisplay.vue    # Optimized result display
+│   │   ├── FloatMenu.vue        # Floating menu (API config + history)
+│   │   ├── HistoryDrawer.vue    # Full-screen history drawer
+│   │   ├── HistoryModal.vue     # History detail modal
+│   │   ├── Modal.vue            # Generic modal
+│   │   └── Toast.vue            # Toast notifications
+│   └── utils/
+│       ├── api.js          # API call wrapper
+│       └── storage.js      # localStorage operations
+```
+
+---
+
+## Design Philosophy
+
+> **"Prompts are the protocol between humans and AI."**
+
+PromptForge's design philosophy is: delegate the most time-consuming and experience-dependent "structuring" work in prompt engineering to AI, allowing humans to focus on **intent expression** itself.
+
+- **Zero-config onboarding**: Open and use, no registration required, data stored locally
+- **Minimalist interaction**: Input → Optimize → Copy, three steps to completion
+- **Professional output**: Driven by system-level prompts, ensuring every optimization follows best practices
+
+---
+
+## License
+
+MIT License © 2025 issacchow1111
+
+---
+
+> **PromptForge** —— Forge prompts, unleash the full potential of AI.
