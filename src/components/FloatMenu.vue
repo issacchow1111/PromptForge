@@ -131,7 +131,8 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { copyToClipboard } from '../utils/clipboard.js'
 
 const props = defineProps({
   config: {
@@ -222,13 +223,15 @@ function handleLoad(item) {
   isOpen.value = false
 }
 
-function handleCopy(item) {
-  navigator.clipboard.writeText(item.content)
-  copiedId.value = item.id
-  emit('copy', item)
-  setTimeout(() => {
-    copiedId.value = null
-  }, 2000)
+async function handleCopy(item) {
+  const success = await copyToClipboard(item.content)
+  if (success) {
+    copiedId.value = item.id
+    emit('copy', item)
+    setTimeout(() => {
+      copiedId.value = null
+    }, 2000)
+  }
 }
 
 function handleRename(item) {
@@ -244,6 +247,21 @@ function handleDelete(item) {
     emit('delete', item)
   }
 }
+
+// 键盘事件处理：ESC 关闭菜单
+function handleKeydown(e) {
+  if (e.key === 'Escape' && isOpen.value) {
+    isOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
+})
 
 // Expose for auto show
 function checkShouldShow() {
@@ -499,22 +517,24 @@ defineExpose({
 }
 
 .icon-btn:hover {
-  background: rgba(0,0,0,0.08);
+  background: var(--border-light);
 }
 
 .icon-btn.danger:hover {
-  background: rgba(255,59,48,0.1);
+  background: #ff3b30;
+  color: white;
 }
 
 .btn-more {
   background: none;
   border: none;
   color: var(--accent);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   cursor: pointer;
-  padding: 8px 12px;
+  padding: 8px;
   text-align: center;
   font-family: inherit;
+  width: 100%;
 }
 
 .btn-more:hover {
@@ -528,25 +548,35 @@ defineExpose({
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0, 0, 0, 0.2);
   z-index: 150;
 }
 
 /* Transitions */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
-  transition: all 0.25s ease;
+  transition: all 0.3s ease;
 }
 
 .dropdown-enter-from,
 .dropdown-leave-to {
   opacity: 0;
-  transform: translateY(-10px) scale(0.95);
+  transform: translateY(-10px);
 }
 
 .expand-enter-active,
 .expand-leave-active {
-  transition: all 0.2s ease;
+  transition: all 0.3s ease;
   overflow: hidden;
 }
 
@@ -554,21 +584,10 @@ defineExpose({
 .expand-leave-to {
   opacity: 0;
   max-height: 0;
-  margin-top: 0;
 }
 
 .expand-enter-to,
 .expand-leave-from {
-  max-height: 400px;
-}
-
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+  max-height: 500px;
 }
 </style>

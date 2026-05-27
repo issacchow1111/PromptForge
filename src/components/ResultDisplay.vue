@@ -74,6 +74,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { copyToClipboard } from '../utils/clipboard.js'
 
 const props = defineProps({
   result: {
@@ -112,13 +113,17 @@ watch(() => props.result, () => {
   isEditing.value = false
 })
 
-function handleCopy() {
-  navigator.clipboard.writeText(props.result)
-  copied.value = true
-  emit('copy', props.result)
-  setTimeout(() => {
-    copied.value = false
-  }, 2000)
+async function handleCopy() {
+  const success = await copyToClipboard(props.result)
+  if (success) {
+    copied.value = true
+    emit('copy', props.result)
+    setTimeout(() => {
+      copied.value = false
+    }, 2000)
+  } else {
+    emit('copy', props.result) // 触发父级显示失败提示
+  }
 }
 
 function startEditing() {

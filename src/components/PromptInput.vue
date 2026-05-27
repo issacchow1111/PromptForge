@@ -42,6 +42,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { copyToClipboard } from '../utils/clipboard.js'
 
 const props = defineProps({
   hasConfig: {
@@ -83,4 +84,9 @@ function handleClear() {
   promptText.value = ''
   emit('clear')
 }
+
+defineExpose({
+  promptText,
+  clear: handleClear
+})
 </script>

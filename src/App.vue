@@ -63,9 +63,9 @@
             暂无保存的提示词
           </div>
 
-          <div 
-            v-for="item in history" 
-            :key="item.id" 
+          <div
+            v-for="item in history"
+            :key="item.id"
             class="drawer-item"
           >
             <div class="drawer-item-header">
@@ -138,6 +138,7 @@ import Toast from './components/Toast.vue'
 import HistoryModal from './components/HistoryModal.vue'
 import { getConfig, saveConfig, clearConfig, getHistory, addToHistory, updateHistoryItem, deleteFromHistory } from './utils/storage.js'
 import { optimizePrompt } from './utils/api.js'
+import { copyToClipboard } from './utils/clipboard.js'
 
 const config = ref(null)
 const history = ref([])
@@ -170,7 +171,7 @@ const copiedId = ref(null)
 onMounted(() => {
   config.value = getConfig()
   history.value = getHistory()
-  
+
   if (floatMenuRef.value) {
     floatMenuRef.value.checkShouldShow()
   }
@@ -233,12 +234,12 @@ function handleClearPrompt() {
 // Save handler
 function handleSave() {
   if (!optimizedResult.value) return
-  
+
   modalTitle.value = '保存提示词'
   const now = new Date()
   modalValue.value = `提示词_${now.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-').replace(/\s/, ' ')}`
   modalPlaceholder.value = '输入提示词名称'
-  
+
   modalCallback = (name) => {
     const item = {
       id: uuidv4(),
@@ -250,27 +251,31 @@ function handleSave() {
     history.value = getHistory()
     showToast('已保存到历史记录', 'success')
   }
-  
+
   showModal.value = true
 }
 
 // Copy handlers
 async function handleCopy(text) {
-  try {
-    await navigator.clipboard.writeText(text)
+  const success = await copyToClipboard(text)
+  if (success) {
     showToast('已复制到剪贴板', 'success')
-  } catch (e) {
-    showToast('复制失败', 'error')
+  } else {
+    showToast('复制失败，请手动复制', 'error')
   }
 }
 
-function handleCopyItem(item) {
-  navigator.clipboard.writeText(item.content)
-  copiedId.value = item.id
-  showToast('已复制到剪贴板', 'success')
-  setTimeout(() => {
-    copiedId.value = null
-  }, 2000)
+async function handleCopyItem(item) {
+  const success = await copyToClipboard(item.content)
+  if (success) {
+    copiedId.value = item.id
+    showToast('已复制到剪贴板', 'success')
+    setTimeout(() => {
+      copiedId.value = null
+    }, 2000)
+  } else {
+    showToast('复制失败，请手动复制', 'error')
+  }
 }
 
 function handleHistoryCopy(item) {
@@ -305,13 +310,13 @@ function handleRename(item) {
   modalTitle.value = '重命名提示词'
   modalValue.value = item.name
   modalPlaceholder.value = '输入新名称'
-  
+
   modalCallback = (newName) => {
     updateHistoryItem(item.id, { name: newName })
     history.value = getHistory()
     showToast('已重命名', 'success')
   }
-  
+
   showModal.value = true
 }
 

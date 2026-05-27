@@ -76,7 +76,8 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { copyToClipboard } from '../utils/clipboard.js'
 
 const props = defineProps({
   history: {
@@ -106,13 +107,15 @@ function handleLoad(item) {
   isOpen.value = false
 }
 
-function handleCopy(item) {
-  navigator.clipboard.writeText(item.content)
-  copiedId.value = item.id
-  emit('copy', item)
-  setTimeout(() => {
-    copiedId.value = null
-  }, 2000)
+async function handleCopy(item) {
+  const success = await copyToClipboard(item.content)
+  if (success) {
+    copiedId.value = item.id
+    emit('copy', item)
+    setTimeout(() => {
+      copiedId.value = null
+    }, 2000)
+  }
 }
 
 function handleDelete(item) {
@@ -120,6 +123,21 @@ function handleDelete(item) {
     emit('delete', item)
   }
 }
+
+// 键盘事件：ESC 关闭抽屉
+function handleKeydown(e) {
+  if (e.key === 'Escape' && isOpen.value) {
+    isOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
+})
 </script>
 
 <style scoped>
