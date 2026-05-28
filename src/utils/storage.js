@@ -1,5 +1,8 @@
+import { getPromptMode } from './promptModes.js'
+
 const CONFIG_KEY = 'prompt_optimizer_config'
 const HISTORY_KEY = 'prompt_optimizer_history'
+const SELECTED_MODE_KEY = 'promptforge_selected_mode'
 const STORAGE_VERSION = '1'
 const MAX_HISTORY_ITEMS = 100
 const MAX_ITEM_LENGTH = 50000 // 单个提示词最大字符数
@@ -7,7 +10,7 @@ const MAX_ITEM_LENGTH = 50000 // 单个提示词最大字符数
 /**
  * 检查 localStorage 是否可用
  */
-function isStorageAvailable() {
+function isStorageAvailable () {
   try {
     const test = '__storage_test__'
     localStorage.setItem(test, test)
@@ -21,7 +24,7 @@ function isStorageAvailable() {
 /**
  * 获取存储的元数据
  */
-function getStorageMeta() {
+function getStorageMeta () {
   try {
     const meta = localStorage.getItem('prompt_optimizer_meta')
     return meta ? JSON.parse(meta) : { version: '0' }
@@ -33,14 +36,14 @@ function getStorageMeta() {
 /**
  * 保存存储元数据
  */
-function setStorageMeta(meta) {
+function setStorageMeta (meta) {
   localStorage.setItem('prompt_optimizer_meta', JSON.stringify(meta))
 }
 
 /**
  * 数据迁移：旧版本数据格式升级
  */
-function migrateData() {
+function migrateData () {
   const meta = getStorageMeta()
   if (meta.version === STORAGE_VERSION) return
 
@@ -64,7 +67,7 @@ function migrateData() {
 /**
  * 检查并清理存储空间
  */
-function checkStorageQuota() {
+function checkStorageQuota () {
   try {
     const history = getHistory()
     if (history.length > MAX_HISTORY_ITEMS) {
@@ -80,7 +83,7 @@ function checkStorageQuota() {
 /**
  * 验证历史记录项格式
  */
-function validateHistoryItem(item) {
+function validateHistoryItem (item) {
   if (!item || typeof item !== 'object') return false
   if (!item.id || typeof item.id !== 'string') return false
   if (!item.name || typeof item.name !== 'string') return false
@@ -98,7 +101,7 @@ if (isStorageAvailable()) {
   checkStorageQuota()
 }
 
-export function getConfig() {
+export function getConfig () {
   if (!isStorageAvailable()) return null
   try {
     const data = localStorage.getItem(CONFIG_KEY)
@@ -109,7 +112,7 @@ export function getConfig() {
   }
 }
 
-export function saveConfig(config) {
+export function saveConfig (config) {
   if (!isStorageAvailable()) return false
   try {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
@@ -120,7 +123,7 @@ export function saveConfig(config) {
   }
 }
 
-export function clearConfig() {
+export function clearConfig () {
   if (!isStorageAvailable()) return false
   try {
     localStorage.removeItem(CONFIG_KEY)
@@ -131,7 +134,35 @@ export function clearConfig() {
   }
 }
 
-export function getHistory() {
+export function getSelectedMode () {
+  if (!isStorageAvailable()) return null
+  try {
+    const modeId = localStorage.getItem(SELECTED_MODE_KEY)
+    if (!modeId) return null
+
+    const validModeId = getPromptMode(modeId).id
+    if (validModeId !== modeId) {
+      localStorage.setItem(SELECTED_MODE_KEY, validModeId)
+    }
+    return validModeId
+  } catch (e) {
+    console.error('Failed to get selected mode:', e)
+    return null
+  }
+}
+
+export function saveSelectedMode (modeId) {
+  if (!isStorageAvailable()) return false
+  try {
+    localStorage.setItem(SELECTED_MODE_KEY, getPromptMode(modeId).id)
+    return true
+  } catch (e) {
+    console.error('Failed to save selected mode:', e)
+    return false
+  }
+}
+
+export function getHistory () {
   if (!isStorageAvailable()) return []
   try {
     const data = localStorage.getItem(HISTORY_KEY)
@@ -142,7 +173,7 @@ export function getHistory() {
   }
 }
 
-export function saveHistory(history) {
+export function saveHistory (history) {
   if (!isStorageAvailable()) return false
   try {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
@@ -165,7 +196,7 @@ export function saveHistory(history) {
   }
 }
 
-export function addToHistory(item) {
+export function addToHistory (item) {
   if (!validateHistoryItem(item)) {
     console.error('Invalid history item:', item)
     return false
@@ -175,7 +206,12 @@ export function addToHistory(item) {
   const duplicate = history.find(h => h.content === item.content)
   if (duplicate) {
     // 更新名称和时间
-    updateHistoryItem(duplicate.id, { name: item.name, createdAt: item.createdAt })
+    updateHistoryItem(duplicate.id, {
+      name: item.name,
+      createdAt: item.createdAt,
+      modeId: item.modeId,
+      modeName: item.modeName
+    })
     return true
   }
   history.unshift(item)
@@ -186,7 +222,7 @@ export function addToHistory(item) {
   return saveHistory(history)
 }
 
-export function updateHistoryItem(id, updates) {
+export function updateHistoryItem (id, updates) {
   const history = getHistory()
   const index = history.findIndex(item => item.id === id)
   if (index !== -1) {
@@ -196,7 +232,7 @@ export function updateHistoryItem(id, updates) {
   return false
 }
 
-export function deleteFromHistory(id) {
+export function deleteFromHistory (id) {
   const history = getHistory()
   const filtered = history.filter(item => item.id !== id)
   return saveHistory(filtered)
@@ -205,9 +241,10 @@ export function deleteFromHistory(id) {
 /**
  * 导出所有数据为 JSON 文件
  */
-export function exportData() {
+export function exportData () {
   const data = {
     config: getConfig(),
+    selectedMode: getSelectedMode(),
     history: getHistory(),
     exportedAt: new Date().toISOString(),
     version: STORAGE_VERSION
@@ -224,10 +261,11 @@ export function exportData() {
 /**
  * 从 JSON 文件导入数据
  */
-export function importData(jsonString) {
+export function importData (jsonString) {
   try {
     const data = JSON.parse(jsonString)
     if (data.config) saveConfig(data.config)
+    if (data.selectedMode) saveSelectedMode(data.selectedMode)
     if (data.history && Array.isArray(data.history)) {
       const valid = data.history.filter(validateHistoryItem)
       saveHistory(valid)

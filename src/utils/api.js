@@ -1,19 +1,11 @@
-const SYSTEM_PROMPT = `你是一个专业的AI提示词工程师。请对用户输入的提示词进行优化，使其更加清晰、准确、有效。
-
-优化方向：
-1. 补全指令逻辑，填补语义空白
-2. 规范提示词结构，使其层次分明
-3. 明确AI角色与任务
-4. 强化输出约束，明确格式要求
-
-请直接输出优化后的提示词，不要添加任何解释说明。`
+import { DEFAULT_PROMPT_MODE_ID, getSystemPrompt } from './promptModes.js'
 
 const REQUEST_TIMEOUT = 60000 // 60秒超时
 
 /**
  * 带超时的 fetch 封装
  */
-async function fetchWithTimeout(url, options = {}, timeout = REQUEST_TIMEOUT) {
+async function fetchWithTimeout (url, options = {}, timeout = REQUEST_TIMEOUT) {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeout)
 
@@ -37,9 +29,10 @@ async function fetchWithTimeout(url, options = {}, timeout = REQUEST_TIMEOUT) {
  * 优化提示词
  * @param {Object} config - API 配置
  * @param {string} userPrompt - 用户输入的提示词
+ * @param {string} modeId - 优化模式 ID
  * @returns {Promise<string>} 优化后的提示词
  */
-export async function optimizePrompt(config, userPrompt) {
+export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMPT_MODE_ID) {
   const { baseURL, apiKey, model } = config
 
   if (!baseURL || !apiKey || !model) {
@@ -58,7 +51,7 @@ export async function optimizePrompt(config, userPrompt) {
       body: JSON.stringify({
         model: model,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: getSystemPrompt(modeId) },
           { role: 'user', content: userPrompt }
         ]
       })
@@ -105,10 +98,16 @@ export async function optimizePrompt(config, userPrompt) {
  * 流式优化提示词（实验性功能）
  * @param {Object} config - API 配置
  * @param {string} userPrompt - 用户输入的提示词
+ * @param {string} modeId - 优化模式 ID
  * @param {Function} onChunk - 每次收到数据时的回调
  * @returns {Promise<string>} 完整的优化结果
  */
-export async function optimizePromptStream(config, userPrompt, onChunk) {
+export async function optimizePromptStream (config, userPrompt, modeId = DEFAULT_PROMPT_MODE_ID, onChunk) {
+  if (typeof modeId === 'function') {
+    onChunk = modeId
+    modeId = DEFAULT_PROMPT_MODE_ID
+  }
+
   const { baseURL, apiKey, model } = config
 
   if (!baseURL || !apiKey || !model) {
@@ -126,7 +125,7 @@ export async function optimizePromptStream(config, userPrompt, onChunk) {
     body: JSON.stringify({
       model: model,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: getSystemPrompt(modeId) },
         { role: 'user', content: userPrompt }
       ],
       stream: true
