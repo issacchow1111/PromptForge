@@ -2,6 +2,42 @@ import { DEFAULT_PROMPT_MODE_ID, getSystemPrompt } from './promptModes.js'
 
 const REQUEST_TIMEOUT = 60000 // 60秒超时
 
+function createFallbackResult (rawContent = '') {
+  return {
+    diagnosis: null,
+    score: null,
+    optimizedPrompt: rawContent,
+    rawContent
+  }
+}
+
+function extractJsonContent (content) {
+  const trimmed = String(content || '').trim()
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  return fencedMatch ? fencedMatch[1].trim() : trimmed
+}
+
+export function parseOptimizationResult (content) {
+  const rawContent = String(content || '')
+  const jsonContent = extractJsonContent(rawContent)
+
+  try {
+    const parsed = JSON.parse(jsonContent)
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.optimizedPrompt !== 'string') {
+      return createFallbackResult(rawContent)
+    }
+
+    return {
+      diagnosis: parsed.diagnosis && typeof parsed.diagnosis === 'object' ? parsed.diagnosis : null,
+      score: parsed.score && typeof parsed.score === 'object' ? parsed.score : null,
+      optimizedPrompt: parsed.optimizedPrompt,
+      rawContent
+    }
+  } catch {
+    return createFallbackResult(rawContent)
+  }
+}
+
 /**
  * 带超时的 fetch 封装
  */
@@ -30,7 +66,7 @@ async function fetchWithTimeout (url, options = {}, timeout = REQUEST_TIMEOUT) {
  * @param {Object} config - API 配置
  * @param {string} userPrompt - 用户输入的提示词
  * @param {string} modeId - 优化模式 ID
- * @returns {Promise<string>} 优化后的提示词
+ * @returns {Promise<Object>} 结构化优化结果
  */
 export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMPT_MODE_ID) {
   const { baseURL, apiKey, model } = config
@@ -81,7 +117,7 @@ export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMP
       throw new Error('API 返回数据格式异常，请检查模型是否兼容 OpenAI 格式')
     }
 
-    return data.choices[0].message.content
+    return parseOptimizationResult(data.choices[0].message.content)
   } catch (error) {
     // 网络错误分类
     if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {

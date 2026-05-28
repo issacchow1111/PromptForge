@@ -1,5 +1,37 @@
 export const DEFAULT_PROMPT_MODE_ID = 'general'
 
+const STRUCTURED_OUTPUT_REQUIREMENTS = `
+
+输出要求：
+1. 必须只返回合法 JSON，不要返回 Markdown 代码块，不要在 JSON 前后添加解释。
+2. JSON 必须包含 diagnosis、score、optimizedPrompt 三个顶层字段。
+3. optimizedPrompt 字段中放优化后的提示词正文。
+4. diagnosis 和 score 必须基于用户原始提示词进行诊断与评分，不要基于优化后的提示词自夸。
+5. 不要为了评分好看而全部给高分，分数应真实反映原提示词质量。
+
+JSON 结构必须符合：
+{
+  "diagnosis": {
+    "summary": "一句话总结原提示词质量",
+    "mainIssues": ["原提示词主要问题"],
+    "semanticGaps": ["语义缺口"],
+    "missingConstraints": ["约束缺失"],
+    "possibleMisunderstandings": ["潜在误解点"],
+    "improvements": ["本次优化补强点"]
+  },
+  "score": {
+    "overall": 0,
+    "dimensions": {
+      "clarity": { "score": 0, "comment": "清晰度评价" },
+      "context": { "score": 0, "comment": "上下文完整度评价" },
+      "constraints": { "score": 0, "comment": "约束完整度评价" },
+      "outputControl": { "score": 0, "comment": "输出可控性评价" },
+      "actionability": { "score": 0, "comment": "可执行性评价" }
+    }
+  },
+  "optimizedPrompt": "优化后的提示词正文"
+}`
+
 export const PROMPT_MODES = [
   {
     id: 'general',
@@ -13,7 +45,7 @@ export const PROMPT_MODES = [
 3. 梳理步骤结构，让提示词层次分明
 4. 去除含糊表达，提升可操作性
 
-请直接输出优化后的提示词，不要添加任何解释说明。`
+请根据上述重点优化提示词。${STRUCTURED_OUTPUT_REQUIREMENTS}`
   },
   {
     id: 'code',
@@ -28,7 +60,7 @@ export const PROMPT_MODES = [
 4. 给出可验证的验收标准、测试要求和交付格式
 5. 约束 AI 不要过度发挥，不要改动无关代码
 
-请直接输出优化后的提示词，不要添加任何解释说明。`
+请根据上述重点优化提示词。${STRUCTURED_OUTPUT_REQUIREMENTS}`
   },
   {
     id: 'image',
@@ -43,7 +75,7 @@ export const PROMPT_MODES = [
 4. 根据需要补充负面提示词，排除低质量、变形、噪点和不需要的元素
 5. 保持提示词可直接用于图像生成，不加入与画面无关的解释
 
-请直接输出优化后的提示词，不要添加任何解释说明。`
+请根据上述重点优化提示词。${STRUCTURED_OUTPUT_REQUIREMENTS}`
   },
   {
     id: 'writing',
@@ -58,7 +90,7 @@ export const PROMPT_MODES = [
 4. 明确避免事项，例如空泛表达、夸大承诺或平台不适配文风
 5. 让输出要求便于直接创作和修改
 
-请直接输出优化后的提示词，不要添加任何解释说明。`
+请根据上述重点优化提示词。${STRUCTURED_OUTPUT_REQUIREMENTS}`
   },
   {
     id: 'data',
@@ -73,7 +105,7 @@ export const PROMPT_MODES = [
 4. 约定输出结构，包括关键结论、过程说明、图表建议和后续行动
 5. 要求区分事实、推断和不确定性
 
-请直接输出优化后的提示词，不要添加任何解释说明。`
+请根据上述重点优化提示词。${STRUCTURED_OUTPUT_REQUIREMENTS}`
   },
   {
     id: 'role',
@@ -88,7 +120,7 @@ export const PROMPT_MODES = [
 4. 明确输入输出格式、示例对话和成功标准
 5. 保持角色稳定，不让设定互相冲突
 
-请直接输出优化后的提示词，不要添加任何解释说明。`
+请根据上述重点优化提示词。${STRUCTURED_OUTPUT_REQUIREMENTS}`
   },
   {
     id: 'structured',
@@ -103,7 +135,7 @@ export const PROMPT_MODES = [
 4. 明确禁止额外解释、前后缀文本和格式外内容
 5. 约束内容合法性、转义规则和格式校验要求
 
-请直接输出优化后的提示词，不要添加任何解释说明。`
+请根据上述重点优化提示词。${STRUCTURED_OUTPUT_REQUIREMENTS}`
   }
 ]
 

@@ -58,11 +58,12 @@
       <ResultDisplay
         ref="resultDisplayRef"
         :result="optimizedResult"
+        :optimization-result="optimizationResult"
         :is-loading="isLoading"
         :error="error"
         @save="handleSave"
         @copy="handleCopy"
-        @update:result="optimizedResult = $event"
+        @update:result="handleResultUpdate"
       />
     </section>
 
@@ -362,6 +363,7 @@ import { DEFAULT_PROMPT_MODE_ID, PROMPT_MODES, getPromptMode } from './utils/pro
 const config = ref(null)
 const history = ref([])
 const optimizedResult = ref('')
+const optimizationResult = ref(null)
 const isLoading = ref(false)
 const error = ref('')
 const promptModes = PROMPT_MODES
@@ -434,9 +436,12 @@ async function handleOptimize (prompt) {
   isLoading.value = true
   error.value = ''
   optimizedResult.value = ''
+  optimizationResult.value = null
 
   try {
-    optimizedResult.value = await optimizePrompt(config.value, prompt, selectedMode.value)
+    const result = await optimizePrompt(config.value, prompt, selectedMode.value)
+    optimizationResult.value = result
+    optimizedResult.value = result.optimizedPrompt || ''
     if (resultDisplayRef.value) {
       resultDisplayRef.value.viewMode = 'markdown'
     }
@@ -451,6 +456,7 @@ async function handleOptimize (prompt) {
 // Clear prompt handler
 function handleClearPrompt () {
   optimizedResult.value = ''
+  optimizationResult.value = null
   error.value = ''
   if (promptInputRef.value) {
     promptInputRef.value.promptText = ''
@@ -474,6 +480,9 @@ function handleSave () {
       content: optimizedResult.value,
       modeId: mode.id,
       modeName: mode.name,
+      diagnosis: optimizationResult.value?.diagnosis || null,
+      score: optimizationResult.value?.score || null,
+      rawResult: optimizationResult.value?.rawContent || null,
       createdAt: new Date().toISOString()
     }
     addToHistory(item)
@@ -514,9 +523,25 @@ function handleHistoryCopy (item) {
 // History handlers
 function handleLoadHistory (item) {
   optimizedResult.value = item.content
+  optimizationResult.value = {
+    diagnosis: item.diagnosis || null,
+    score: item.score || null,
+    optimizedPrompt: item.content,
+    rawContent: item.rawResult || item.content
+  }
   error.value = ''
   historyOpen.value = false
   showToast('已加载历史提示词', 'info')
+}
+
+function handleResultUpdate (value) {
+  optimizedResult.value = value
+  if (optimizationResult.value) {
+    optimizationResult.value = {
+      ...optimizationResult.value,
+      optimizedPrompt: value
+    }
+  }
 }
 
 function handleOpenHistory () {
@@ -529,9 +554,15 @@ function handleOpenHistoryItem (item) {
 }
 
 function handleHistoryModalSave (updatedItem) {
-  updateHistoryItem(updatedItem.id, { content: updatedItem.content })
+  const updates = {
+    content: updatedItem.content,
+    diagnosis: null,
+    score: null,
+    rawResult: null
+  }
+  updateHistoryItem(updatedItem.id, updates)
   history.value = getHistory()
-  historyModalItem.value = { ...updatedItem }
+  historyModalItem.value = { ...updatedItem, ...updates }
   showToast('已保存修改', 'success')
 }
 

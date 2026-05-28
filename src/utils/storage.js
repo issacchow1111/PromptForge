@@ -210,7 +210,10 @@ export function addToHistory (item) {
       name: item.name,
       createdAt: item.createdAt,
       modeId: item.modeId,
-      modeName: item.modeName
+      modeName: item.modeName,
+      diagnosis: item.diagnosis,
+      score: item.score,
+      rawResult: item.rawResult
     })
     return true
   }
