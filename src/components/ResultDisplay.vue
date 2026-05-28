@@ -95,7 +95,11 @@
             v-else-if="activePanel === 'diagnosis' && hasReport"
             class="diagnosis-panel"
           >
-            <section v-if="score" class="score-section">
+            <div v-if="isReportStale" class="report-stale-notice">
+              当前结果已被编辑，诊断内容基于编辑前版本，仅供参考；旧评分已失效。
+            </div>
+
+            <section v-if="score && !scoreStale" class="score-section">
               <div class="score-overview">
                 <div>
                   <div class="section-label">总评分</div>
@@ -224,6 +228,97 @@
           {{ copied ? "已复制" : "复制" }}
         </button>
       </div>
+
+      <div v-if="result && !isEditing" class="iteration-toolbar">
+        <div class="iteration-toolbar-main">
+          <div class="current-version">
+            <span>当前版本：</span>
+            <strong>{{ activeVersionTitle }}</strong>
+            <span v-if="activeVersion?.createdAt" class="version-time">
+              {{ formatVersionTime(activeVersion.createdAt) }}
+            </span>
+            <span v-if="isIterating" class="iteration-status">迭代中...</span>
+          </div>
+          <div class="iteration-toolbar-actions">
+            <button
+              class="btn btn-ghost btn-small"
+              :disabled="isLoading"
+              @click="toggleIterationExpanded"
+            >
+              {{ iterationExpanded ? "收起迭代" : "继续迭代" }}
+            </button>
+            <button
+              class="btn btn-ghost btn-small"
+              :disabled="isIterating || iterationHistory.length === 0"
+              @click="toggleVersionsExpanded"
+            >
+              {{ versionsExpanded ? "收起版本" : "版本记录" }}
+            </button>
+          </div>
+        </div>
+
+        <div v-if="iterationExpanded" class="iteration-expanded">
+          <div class="custom-section">
+            <label class="iteration-label" for="iteration-instruction"
+              >自定义要求</label
+            >
+            <textarea
+              id="iteration-instruction"
+              v-model="customInstruction"
+              class="iteration-textarea"
+              placeholder="例如：补充边界条件，并把输出格式固定为 JSON。"
+              :disabled="isLoading || isIterating"
+            ></textarea>
+            <div class="custom-actions">
+              <button
+                class="btn btn-primary btn-small"
+                :disabled="!canSubmitCustomIteration"
+                @click="handleCustomIterate"
+              >
+                <span v-if="isIterating" class="loading">
+                  <span class="spinner"></span>
+                  迭代中...
+                </span>
+                <span v-else>继续优化</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="quick-section">
+            <div class="iteration-label">快捷优化</div>
+            <div class="quick-actions">
+              <button
+                v-for="instruction in quickInstructions"
+                :key="instruction"
+                class="btn btn-ghost btn-small"
+                :disabled="isLoading || isIterating"
+                @click="handleQuickIterate(instruction)"
+              >
+                {{ instruction }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="versionsExpanded && iterationHistory.length > 0"
+          class="version-expanded"
+        >
+          <div class="iteration-label">版本记录</div>
+          <div class="version-list" role="tablist" aria-label="版本记录">
+            <button
+              v-for="version in iterationHistory"
+              :key="version.id"
+              class="tab-btn version-tab"
+              :class="{ active: version.id === activeIterationId }"
+              :disabled="isIterating"
+              @click="handleSwitchVersion(version.id)"
+            >
+              {{ version.title || versionLabel(version) }}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -247,13 +342,25 @@ const props = defineProps({
     type: Boolean,
     default: false
   },
+  isIterating: {
+    type: Boolean,
+    default: false
+  },
   error: {
     type: String,
     default: ''
+  },
+  iterationHistory: {
+    type: Array,
+    default: () => []
+  },
+  activeIterationId: {
+    type: String,
+    default: null
   }
 })
 
-const emit = defineEmits(['save', 'copy', 'update:result'])
+const emit = defineEmits(['save', 'copy', 'iterate', 'switch-version', 'update:result'])
 
 const activePanel = ref('result')
 const viewMode = ref('markdown')
@@ -261,6 +368,21 @@ const copied = ref(false)
 const isEditing = ref(false)
 const editContent = ref('')
 const editTextarea = ref(null)
+const customInstruction = ref('')
+const iterationExpanded = ref(false)
+const versionsExpanded = ref(false)
+const quickInstructions = [
+  '更精简',
+  '更专业',
+  '更严格',
+  '加入输出格式',
+  '加入示例',
+  '改成英文',
+  '改成中文',
+  '适配 GPT',
+  '适配 Claude',
+  '适配 Gemini'
+]
 
 const renderedContent = computed(() => {
   if (!props.result) return ''
@@ -272,8 +394,26 @@ const renderedContent = computed(() => {
 
 const diagnosis = computed(() => props.optimizationResult?.diagnosis || null)
 const score = computed(() => props.optimizationResult?.score || null)
+const diagnosisStale = computed(() => Boolean(props.optimizationResult?.diagnosisStale))
+const scoreStale = computed(() => Boolean(props.optimizationResult?.scoreStale))
+const isReportStale = computed(() => diagnosisStale.value || scoreStale.value)
 
 const hasReport = computed(() => Boolean(diagnosis.value || score.value))
+
+const activeVersion = computed(() => {
+  return props.iterationHistory.find(version => version.id === props.activeIterationId) || null
+})
+
+const activeVersionTitle = computed(() => {
+  if (activeVersion.value) {
+    return activeVersion.value.title || versionLabel(activeVersion.value)
+  }
+  return '版本 1：初始版本'
+})
+
+const canSubmitCustomIteration = computed(() => {
+  return customInstruction.value.trim().length > 0 && !props.isLoading && !props.isIterating
+})
 
 const overallScore = computed(() => normalizeScore(score.value?.overall))
 
@@ -309,10 +449,20 @@ watch([() => props.result, () => props.optimizationResult], () => {
   if (!hasReport.value || !props.result) {
     activePanel.value = 'result'
   }
+  if (!props.result) {
+    iterationExpanded.value = false
+    versionsExpanded.value = false
+  }
 })
 
 watch(() => props.optimizationResult, () => {
   activePanel.value = 'result'
+})
+
+watch(() => props.activeIterationId, () => {
+  customInstruction.value = ''
+  iterationExpanded.value = false
+  versionsExpanded.value = false
 })
 
 watch(activePanel, (panel) => {
@@ -335,6 +485,52 @@ function normalizeList (value) {
     return [value.trim()]
   }
   return []
+}
+
+function handleQuickIterate (instruction) {
+  emit('iterate', instruction)
+}
+
+function toggleIterationExpanded () {
+  iterationExpanded.value = !iterationExpanded.value
+  if (iterationExpanded.value) {
+    versionsExpanded.value = false
+  }
+}
+
+function toggleVersionsExpanded () {
+  versionsExpanded.value = !versionsExpanded.value
+  if (versionsExpanded.value) {
+    iterationExpanded.value = false
+  }
+}
+
+function handleSwitchVersion (id) {
+  emit('switch-version', id)
+  versionsExpanded.value = false
+}
+
+function handleCustomIterate () {
+  const instruction = customInstruction.value.trim()
+  if (!instruction) return
+  emit('iterate', instruction)
+}
+
+function versionLabel (version) {
+  const index = props.iterationHistory.findIndex(item => item.id === version.id)
+  if (version.type === 'initial') return '版本 1：初始版本'
+  return `版本 ${index + 1}：${version.instruction || '继续优化'}`
+}
+
+function formatVersionTime (isoString) {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 
 async function handleCopy () {
@@ -443,6 +639,16 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.report-stale-notice {
+  padding: 12px 14px;
+  color: var(--accent-dark);
+  background: rgba(0, 113, 227, 0.08);
+  border: 1px solid rgba(0, 113, 227, 0.16);
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  line-height: 1.6;
 }
 
 .score-overview {
@@ -558,6 +764,136 @@ defineExpose({
   font: inherit;
 }
 
+.iteration-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.iteration-toolbar-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.current-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  word-break: break-word;
+}
+
+.current-version strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.version-time {
+  color: var(--text-tertiary);
+}
+
+.iteration-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.iteration-status {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  color: var(--accent);
+  background: rgba(0, 113, 227, 0.08);
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.iteration-expanded,
+.version-expanded {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+}
+
+.quick-section,
+.custom-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.iteration-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.version-list,
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.version-tab {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+  word-break: break-word;
+}
+
+.version-tab:disabled,
+.quick-actions .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.iteration-textarea {
+  width: 100%;
+  min-height: 92px;
+  padding: 14px 16px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.92rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.iteration-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+.iteration-textarea:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.custom-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 @media (max-width: 720px) {
   .result-controls,
   .score-overview {
@@ -577,6 +913,26 @@ defineExpose({
   .result-panel-tabs .tab-btn,
   .result-tabs .tab-btn {
     flex: 1;
+  }
+
+  .iteration-toolbar-main,
+  .custom-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .iteration-toolbar-actions {
+    justify-content: stretch;
+    width: 100%;
+  }
+
+  .iteration-toolbar-actions .btn {
+    flex: 1;
+  }
+
+  .quick-actions .btn,
+  .custom-actions .btn {
+    width: 100%;
   }
 }
 </style>

@@ -2,12 +2,49 @@ import { DEFAULT_PROMPT_MODE_ID, getSystemPrompt } from './promptModes.js'
 
 const REQUEST_TIMEOUT = 60000 // 60秒超时
 
+const ITERATION_SYSTEM_PROMPT = `你是一个专业的 AI 提示词迭代工程师。你需要基于当前已经优化后的提示词继续改进，而不是回到原始输入重新生成。
+
+迭代要求：
+1. 必须严格遵守用户本次迭代指令。
+2. 保留当前版本中仍然有效的结构、约束、上下文和输出要求。
+3. 不要无故删除重要背景、边界条件、验收标准或禁止事项。
+4. 如果用户要求“更精简”，应压缩表达但保留核心约束。
+5. 如果用户要求“更严格”，应补强边界、验收标准和禁止事项。
+6. 如果用户要求适配某模型，应针对该模型常见交互风格调整提示词。
+7. 诊断和评分应说明本次迭代后的提示词质量与改进点。
+8. 如果迭代上下文包含全局前置条件，请将其作为背景上下文参考；不要机械复制全部前置条件到最终提示词中。
+9. 必须只返回合法 JSON，不要返回 Markdown 代码块，不要在 JSON 前后添加解释。
+
+JSON 结构必须符合：
+{
+  "diagnosis": {
+    "summary": "一句话总结本次迭代后的提示词质量",
+    "mainIssues": ["当前版本仍然存在的主要问题"],
+    "semanticGaps": ["当前版本仍然存在的语义缺口"],
+    "missingConstraints": ["当前版本仍然缺失的约束"],
+    "possibleMisunderstandings": ["当前版本仍可能导致的误解点"],
+    "improvements": ["本次迭代补强点"]
+  },
+  "score": {
+    "overall": 0,
+    "dimensions": {
+      "clarity": { "score": 0, "comment": "清晰度评价" },
+      "context": { "score": 0, "comment": "上下文完整度评价" },
+      "constraints": { "score": 0, "comment": "约束完整度评价" },
+      "outputControl": { "score": 0, "comment": "输出可控性评价" },
+      "actionability": { "score": 0, "comment": "可执行性评价" }
+    }
+  },
+  "optimizedPrompt": "迭代后的提示词正文"
+}`
+
 function createFallbackResult (rawContent = '') {
   return {
     diagnosis: null,
     score: null,
     optimizedPrompt: rawContent,
-    rawContent
+    rawContent,
+    structured: false
   }
 }
 
@@ -31,11 +68,35 @@ export function parseOptimizationResult (content) {
       diagnosis: parsed.diagnosis && typeof parsed.diagnosis === 'object' ? parsed.diagnosis : null,
       score: parsed.score && typeof parsed.score === 'object' ? parsed.score : null,
       optimizedPrompt: parsed.optimizedPrompt,
-      rawContent
+      rawContent,
+      structured: true
     }
   } catch {
     return createFallbackResult(rawContent)
   }
+}
+
+export function hasCompleteOptimizationReport (result) {
+  return Boolean(
+    result &&
+    result.structured !== false &&
+    typeof result.optimizedPrompt === 'string' &&
+    result.optimizedPrompt.trim() &&
+    result.diagnosis &&
+    typeof result.diagnosis === 'object' &&
+    result.score &&
+    typeof result.score === 'object' &&
+    typeof result.score.overall !== 'undefined' &&
+    result.score.dimensions &&
+    typeof result.score.dimensions === 'object'
+  )
+}
+
+function createPromptMessage (userPrompt, precondition = '') {
+  const normalizedPrecondition = String(precondition || '').trim()
+  if (!normalizedPrecondition) return userPrompt
+
+  return `【全局前置条件】\n${normalizedPrecondition}\n\n【待优化提示词】\n${userPrompt}`
 }
 
 /**
@@ -66,9 +127,10 @@ async function fetchWithTimeout (url, options = {}, timeout = REQUEST_TIMEOUT) {
  * @param {Object} config - API 配置
  * @param {string} userPrompt - 用户输入的提示词
  * @param {string} modeId - 优化模式 ID
+ * @param {string} precondition - 全局前置条件
  * @returns {Promise<Object>} 结构化优化结果
  */
-export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMPT_MODE_ID) {
+export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMPT_MODE_ID, precondition = '') {
   const { baseURL, apiKey, model } = config
 
   if (!baseURL || !apiKey || !model) {
@@ -88,7 +150,7 @@ export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMP
         model: model,
         messages: [
           { role: 'system', content: getSystemPrompt(modeId) },
-          { role: 'user', content: userPrompt }
+          { role: 'user', content: createPromptMessage(userPrompt, precondition) }
         ]
       })
     })
@@ -120,6 +182,85 @@ export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMP
     return parseOptimizationResult(data.choices[0].message.content)
   } catch (error) {
     // 网络错误分类
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      throw new Error('网络连接失败，请检查网络或 API 地址是否正确')
+    }
+    if (error.message?.includes('CORS')) {
+      throw new Error('跨域请求被阻止，请确认 API 服务支持跨域访问')
+    }
+    throw error
+  }
+}
+
+/**
+ * 基于当前优化结果继续迭代提示词
+ * @param {Object} config - API 配置
+ * @param {Object} payload - 迭代上下文
+ * @returns {Promise<Object>} 结构化优化结果
+ */
+export async function iteratePrompt (config, payload) {
+  const { baseURL, apiKey, model } = config
+
+  if (!baseURL || !apiKey || !model) {
+    throw new Error('API 配置不完整，请检查 Base URL、API Key 和模型名称')
+  }
+
+  if (!payload?.currentPrompt || !payload?.instruction) {
+    throw new Error('迭代信息不完整，请检查当前版本和迭代要求')
+  }
+
+  const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
+  const iterationContext = {
+    modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+    originalPrompt: payload.originalPrompt || '',
+    precondition: payload.precondition || '',
+    currentPrompt: payload.currentPrompt,
+    iterationInstruction: payload.instruction,
+    diagnosis: payload.diagnosis || null,
+    score: payload.score || null
+  }
+
+  try {
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: ITERATION_SYSTEM_PROMPT },
+          { role: 'user', content: JSON.stringify(iterationContext, null, 2) }
+        ]
+      })
+    })
+
+    if (!response.ok) {
+      let errorMessage = `请求失败: ${response.status}`
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.error?.message
+          || errorData.error?.code
+          || errorData.message
+          || `请求失败 (${response.status})`
+      } catch {
+        if (response.status === 401) errorMessage = 'API Key 无效或已过期'
+        else if (response.status === 429) errorMessage = '请求过于频繁，请稍后重试'
+        else if (response.status === 500) errorMessage = '服务器内部错误，请稍后重试'
+        else if (response.status === 503) errorMessage = '服务暂不可用，请稍后重试'
+      }
+      throw new Error(errorMessage)
+    }
+
+    const data = await response.json()
+
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error('API 返回数据格式异常，请检查模型是否兼容 OpenAI 格式')
+    }
+
+    return parseOptimizationResult(data.choices[0].message.content)
+  } catch (error) {
     if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
       throw new Error('网络连接失败，请检查网络或 API 地址是否正确')
     }

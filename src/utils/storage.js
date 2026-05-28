@@ -3,6 +3,7 @@ import { getPromptMode } from './promptModes.js'
 const CONFIG_KEY = 'prompt_optimizer_config'
 const HISTORY_KEY = 'prompt_optimizer_history'
 const SELECTED_MODE_KEY = 'promptforge_selected_mode'
+const PRECONDITION_KEY = 'promptforge_precondition'
 const STORAGE_VERSION = '1'
 const MAX_HISTORY_ITEMS = 100
 const MAX_ITEM_LENGTH = 50000 // 单个提示词最大字符数
@@ -162,6 +163,38 @@ export function saveSelectedMode (modeId) {
   }
 }
 
+export function getPrecondition () {
+  if (!isStorageAvailable()) return ''
+  try {
+    return localStorage.getItem(PRECONDITION_KEY) || ''
+  } catch (e) {
+    console.error('Failed to get precondition:', e)
+    return ''
+  }
+}
+
+export function savePrecondition (value) {
+  if (!isStorageAvailable()) return false
+  try {
+    localStorage.setItem(PRECONDITION_KEY, String(value || ''))
+    return true
+  } catch (e) {
+    console.error('Failed to save precondition:', e)
+    return false
+  }
+}
+
+export function clearPrecondition () {
+  if (!isStorageAvailable()) return false
+  try {
+    localStorage.removeItem(PRECONDITION_KEY)
+    return true
+  } catch (e) {
+    console.error('Failed to clear precondition:', e)
+    return false
+  }
+}
+
 export function getHistory () {
   if (!isStorageAvailable()) return []
   try {
@@ -213,7 +246,13 @@ export function addToHistory (item) {
       modeName: item.modeName,
       diagnosis: item.diagnosis,
       score: item.score,
-      rawResult: item.rawResult
+      diagnosisStale: item.diagnosisStale,
+      scoreStale: item.scoreStale,
+      rawResult: item.rawResult,
+      originalPrompt: item.originalPrompt,
+      precondition: item.precondition,
+      iterationHistory: item.iterationHistory,
+      activeIterationId: item.activeIterationId
     })
     return true
   }
@@ -248,6 +287,7 @@ export function exportData () {
   const data = {
     config: getConfig(),
     selectedMode: getSelectedMode(),
+    precondition: getPrecondition(),
     history: getHistory(),
     exportedAt: new Date().toISOString(),
     version: STORAGE_VERSION
@@ -269,6 +309,7 @@ export function importData (jsonString) {
     const data = JSON.parse(jsonString)
     if (data.config) saveConfig(data.config)
     if (data.selectedMode) saveSelectedMode(data.selectedMode)
+    if (typeof data.precondition === 'string') savePrecondition(data.precondition)
     if (data.history && Array.isArray(data.history)) {
       const valid = data.history.filter(validateHistoryItem)
       saveHistory(valid)

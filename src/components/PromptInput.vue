@@ -25,6 +25,32 @@
         <p class="mode-description">{{ currentMode.description }}</p>
       </div>
 
+      <div class="precondition-summary">
+        <div class="precondition-info">
+          <span class="precondition-label">
+            {{ hasPrecondition ? "已设置前置条件" : "未设置前置条件" }}
+          </span>
+          <p v-if="hasPrecondition" class="precondition-preview">
+            {{ preconditionSummary }}
+          </p>
+        </div>
+        <div class="precondition-actions">
+          <button
+            class="btn btn-ghost btn-small"
+            @click="emit('open-precondition')"
+          >
+            {{ hasPrecondition ? "查看 / 修改" : "设置前置条件" }}
+          </button>
+          <button
+            v-if="hasPrecondition"
+            class="btn btn-ghost btn-small"
+            @click="emit('clear-precondition')"
+          >
+            清空
+          </button>
+        </div>
+      </div>
+
       <textarea
         v-model="promptText"
         class="prompt-textarea"
@@ -51,6 +77,12 @@
         <div class="input-actions">
           <button class="btn btn-ghost btn-small" @click="handleClear">
             清空
+          </button>
+          <button
+            class="btn btn-ghost btn-small"
+            @click="emit('open-precondition')"
+          >
+            设置前置条件
           </button>
           <button
             class="btn btn-primary"
@@ -102,14 +134,25 @@ const props = defineProps({
   selectedMode: {
     type: String,
     default: 'general'
+  },
+  precondition: {
+    type: String,
+    default: ''
   }
 })
 
-const emit = defineEmits(['optimize', 'clear', 'update:selectedMode'])
+const emit = defineEmits(['optimize', 'clear', 'open-precondition', 'clear-precondition', 'update:selectedMode'])
 
 const promptText = ref('')
 
 const charCount = computed(() => promptText.value.length)
+
+const hasPrecondition = computed(() => props.precondition.trim().length > 0)
+
+const preconditionSummary = computed(() => {
+  const summary = props.precondition.replace(/\s+/g, ' ').trim()
+  return summary.length > 110 ? `${summary.slice(0, 110)}...` : summary
+})
 
 const currentMode = computed(() => {
   return props.modes.find(mode => mode.id === props.selectedMode) || props.modes[0] || {
@@ -231,6 +274,45 @@ defineExpose({
   color: var(--text-secondary);
 }
 
+.precondition-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.precondition-info {
+  min-width: 0;
+}
+
+.precondition-label {
+  display: block;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.precondition-preview {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.precondition-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .input-hint {
   display: flex;
   align-items: center;
@@ -271,6 +353,17 @@ defineExpose({
     justify-content: flex-end;
     gap: 10px;
     flex-wrap: wrap;
+  }
+
+  .precondition-summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .precondition-actions,
+  .precondition-actions .btn,
+  .input-actions .btn {
+    width: 100%;
   }
 }
 </style>

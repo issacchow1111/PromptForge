@@ -53,7 +53,9 @@
 }
 
 /* ---------- 全局重置 ---------- */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -66,7 +68,9 @@ html {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'Helvetica Neue', 'Segoe UI', sans-serif;
   background: #ffffff;
   color: var(--text-primary);
   line-height: 1.5;
@@ -105,39 +109,37 @@ body {
   position: relative;
   text-align: center;
   padding: 120px 24px 80px;
-  background: linear-gradient(180deg,
-    #f8f9ff 0%,
-    #ffffff 50%,
-    #f5f7ff 100%
-  );
+  background: #ffffff url('/bg.png') center / cover no-repeat;
   overflow: hidden;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-/* 极淡科技感背景网格 */
+/* 背景图与页面白色区域的柔和衔接 */
 .hero::before {
   content: '';
   position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(0, 113, 227, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 113, 227, 0.04) 1px, transparent 1px);
-  background-size: 60px 60px;
-  mask-image: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, transparent 70%);
-  -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, transparent 70%);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 42%;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.88) 70%,
+    #ffffff 100%
+  );
   pointer-events: none;
 }
 
-/* 光晕效果 - 浅色版 */
 .hero::after {
   content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 800px;
-  height: 400px;
-  background: radial-gradient(ellipse, rgba(0, 113, 227, 0.06) 0%, transparent 70%);
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.36) 0%,
+    rgba(255, 255, 255, 0.08) 45%,
+    rgba(255, 255, 255, 0) 100%
+  );
   pointer-events: none;
 }
 
@@ -234,8 +236,13 @@ body {
 }
 
 @keyframes bounce {
-  0%, 100% { transform: translateX(-50%) translateY(0); }
-  50% { transform: translateX(-50%) translateY(8px); }
+  0%,
+  100% {
+    transform: translateX(-50%) translateY(0);
+  }
+  50% {
+    transform: translateX(-50%) translateY(8px);
+  }
 }
 
 /* =====================================================
@@ -306,7 +313,7 @@ body {
 
 .card-title-icon {
   font-size: 1.3rem;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 }
 
 .card-body {
@@ -380,7 +387,11 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, rgba(255,255,255,0.15) 0%, transparent 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.15) 0%,
+    transparent 100%
+  );
   opacity: 0;
   transition: opacity var(--duration-fast);
 }
@@ -390,7 +401,11 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--accent) 0%,
+    var(--accent-hover) 100%
+  );
   color: white;
   box-shadow: 0 2px 12px rgba(0, 113, 227, 0.3);
 }
@@ -496,7 +511,7 @@ body {
 }
 
 .result-content.plain {
-  font-family: "SF Mono", "Menlo", "Fira Code", monospace;
+  font-family: 'SF Mono', 'Menlo', 'Fira Code', monospace;
   font-size: 0.9rem;
   white-space: pre-wrap;
   word-break: break-word;
@@ -506,18 +521,39 @@ body {
   background: var(--bg-primary);
 }
 
-.result-content.html h1 { font-size: 1.6rem; margin: 20px 0 12px; font-weight: 700; }
-.result-content.html h2 { font-size: 1.3rem; margin: 18px 0 10px; font-weight: 600; }
-.result-content.html h3 { font-size: 1.1rem; margin: 16px 0 8px; font-weight: 600; }
-.result-content.html p { margin: 12px 0; color: var(--text-secondary); }
-.result-content.html ul, .result-content.html ol { margin: 12px 0; padding-left: 24px; }
-.result-content.html li { margin: 6px 0; }
+.result-content.html h1 {
+  font-size: 1.6rem;
+  margin: 20px 0 12px;
+  font-weight: 700;
+}
+.result-content.html h2 {
+  font-size: 1.3rem;
+  margin: 18px 0 10px;
+  font-weight: 600;
+}
+.result-content.html h3 {
+  font-size: 1.1rem;
+  margin: 16px 0 8px;
+  font-weight: 600;
+}
+.result-content.html p {
+  margin: 12px 0;
+  color: var(--text-secondary);
+}
+.result-content.html ul,
+.result-content.html ol {
+  margin: 12px 0;
+  padding-left: 24px;
+}
+.result-content.html li {
+  margin: 6px 0;
+}
 .result-content.html code {
   background: var(--bg-secondary);
   padding: 3px 8px;
   border-radius: 4px;
   font-size: 0.85em;
-  font-family: "SF Mono", monospace;
+  font-family: 'SF Mono', monospace;
   color: var(--accent-dark);
 }
 .result-content.html pre {
@@ -545,7 +581,8 @@ body {
   margin: 16px 0;
   font-size: 0.9rem;
 }
-.result-content.html th, .result-content.html td {
+.result-content.html th,
+.result-content.html td {
   border: 1px solid var(--border);
   padding: 10px 14px;
   text-align: left;
@@ -599,7 +636,7 @@ body {
   border-radius: var(--radius-lg);
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 0.9rem;
   line-height: 1.7;
   resize: vertical;
@@ -638,7 +675,9 @@ body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 脉冲光点 */
@@ -651,8 +690,15 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.2); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.2);
+  }
 }
 
 /* =====================================================

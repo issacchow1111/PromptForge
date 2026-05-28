@@ -4,27 +4,58 @@
       <div class="modal-panel">
         <div class="modal-header">
           <h2 class="modal-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-              <polyline points="14 2 14 8 20 8"/>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+              />
+              <polyline points="14 2 14 8 20 8" />
             </svg>
             {{ item?.name }}
           </h2>
           <div class="modal-header-actions">
             <button class="btn btn-ghost btn-small" @click="handleModeToggle">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                <polyline points="14 2 14 8 20 8"/>
-                <line x1="16" y1="13" x2="8" y2="13"/>
-                <line x1="16" y1="17" x2="8" y2="17"/>
-                <polyline points="10 9 9 9 8 9"/>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
               </svg>
-              {{ viewMode === 'markdown' ? '纯文本' : 'Markdown' }}
+              {{ viewMode === "markdown" ? "纯文本" : "Markdown" }}
             </button>
             <button class="modal-close" @click="handleClose">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"/>
-                <line x1="6" y1="6" x2="18" y2="18"/>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           </div>
@@ -32,15 +63,29 @@
 
         <div class="modal-meta">
           <span class="meta-time">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
             </svg>
             {{ formatTime(item?.createdAt) }}
           </span>
         </div>
 
         <div class="modal-body">
+          <section v-if="hasPrecondition" class="history-precondition">
+            <h3>本次使用的前置条件</h3>
+            <pre>{{ item.precondition }}</pre>
+          </section>
+
           <div v-if="isEditing" class="edit-area">
             <textarea
               ref="editTextarea"
@@ -49,7 +94,11 @@
               placeholder="编辑提示词内容..."
             ></textarea>
           </div>
-          <div v-else class="content-display" :class="viewMode === 'markdown' ? 'html' : 'plain'">
+          <div
+            v-else
+            class="content-display"
+            :class="viewMode === 'markdown' ? 'html' : 'plain'"
+          >
             <div v-if="viewMode === 'markdown'" v-html="renderedContent"></div>
             <pre v-else class="plain-content">{{ item?.content }}</pre>
           </div>
@@ -57,28 +106,71 @@
 
         <div class="modal-footer">
           <div class="footer-left">
-            <button v-if="!isEditing" class="btn btn-secondary" @click="isEditing = true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            <button
+              v-if="!isEditing"
+              class="btn btn-secondary"
+              @click="isEditing = true"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
+                />
+                <path
+                  d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"
+                />
               </svg>
               编辑内容
             </button>
             <template v-else>
-              <button class="btn btn-ghost" @click="handleCancelEdit">取消</button>
-              <button class="btn btn-primary" @click="handleSaveEdit">保存修改</button>
+              <button class="btn btn-ghost" @click="handleCancelEdit">
+                取消
+              </button>
+              <button class="btn btn-primary" @click="handleSaveEdit">
+                保存修改
+              </button>
             </template>
           </div>
           <div class="footer-right">
             <button class="btn btn-ghost" @click="handleCopy">
-              <svg v-if="!copied" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              <svg
+                v-if="!copied"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path
+                  d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                />
               </svg>
-              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
+              <svg
+                v-else
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="20 6 9 17 4 12" />
               </svg>
-              {{ copied ? '已复制' : '复制' }}
+              {{ copied ? "已复制" : "复制" }}
             </button>
           </div>
         </div>
@@ -120,6 +212,8 @@ const renderedContent = computed(() => {
   return props.item.content
 })
 
+const hasPrecondition = computed(() => Boolean(props.item?.precondition?.trim()))
+
 watch(() => props.item, () => {
   viewMode.value = 'markdown'
   isEditing.value = false
@@ -140,11 +234,11 @@ watch(isEditing, (editing) => {
   }
 })
 
-function handleModeToggle() {
+function handleModeToggle () {
   viewMode.value = viewMode.value === 'markdown' ? 'plain' : 'markdown'
 }
 
-function handleClose() {
+function handleClose () {
   if (isEditing.value) {
     if (confirm('编辑未保存，确定要关闭吗？')) {
       isEditing.value = false
@@ -155,21 +249,21 @@ function handleClose() {
   }
 }
 
-function handleCancelEdit() {
+function handleCancelEdit () {
   if (confirm('编辑未保存，确定要取消吗？')) {
     isEditing.value = false
     editContent.value = ''
   }
 }
 
-function handleSaveEdit() {
+function handleSaveEdit () {
   if (editContent.value.trim()) {
     emit('save', { ...props.item, content: editContent.value })
     isEditing.value = false
   }
 }
 
-async function handleCopy() {
+async function handleCopy () {
   const success = await copyToClipboard(props.item?.content || '')
   if (success) {
     copied.value = true
@@ -179,7 +273,7 @@ async function handleCopy() {
   }
 }
 
-function formatTime(isoString) {
+function formatTime (isoString) {
   if (!isoString) return ''
   const date = new Date(isoString)
   return date.toLocaleString('zh-CN', {
@@ -284,6 +378,31 @@ function formatTime(isoString) {
   min-height: 300px;
 }
 
+.history-precondition {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+}
+
+.history-precondition h3 {
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.history-precondition pre {
+  margin: 0;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.86rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .content-display {
   line-height: 1.7;
 }
@@ -314,7 +433,7 @@ function formatTime(isoString) {
   background: var(--bg-secondary);
   padding: 2px 6px;
   border-radius: 4px;
-  font-family: 'SF Mono', monospace;
+  font-family: "SF Mono", monospace;
   font-size: 0.9em;
 }
 
@@ -351,7 +470,7 @@ function formatTime(isoString) {
   border-radius: var(--radius-lg);
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-family: "SF Mono", "Fira Code", monospace;
   font-size: 0.9rem;
   line-height: 1.7;
   resize: vertical;

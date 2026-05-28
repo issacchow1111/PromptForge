@@ -50,9 +50,12 @@
         :has-config="!!config"
         :is-loading="isLoading"
         :modes="promptModes"
+        :precondition="precondition"
         v-model:selected-mode="selectedMode"
         @optimize="handleOptimize"
         @clear="handleClearPrompt"
+        @open-precondition="preconditionModalOpen = true"
+        @clear-precondition="handlePreconditionClear"
       />
 
       <ResultDisplay
@@ -60,9 +63,14 @@
         :result="optimizedResult"
         :optimization-result="optimizationResult"
         :is-loading="isLoading"
+        :is-iterating="isIterating"
         :error="error"
+        :iteration-history="iterationHistory"
+        :active-iteration-id="activeIterationId"
         @save="handleSave"
         @copy="handleCopy"
+        @iterate="handleIterate"
+        @switch-version="handleSwitchIteration"
         @update:result="handleResultUpdate"
       />
     </section>
@@ -303,6 +311,14 @@
       @save="handleHistoryModalSave"
     />
 
+    <PreconditionModal
+      :show="preconditionModalOpen"
+      :value="precondition"
+      @save="handlePreconditionSave"
+      @clear="handlePreconditionClear"
+      @cancel="preconditionModalOpen = false"
+    />
+
     <!-- Footer -->
     <footer class="site-footer">
       <div class="footer-inner">
@@ -355,8 +371,9 @@ import FloatMenu from './components/FloatMenu.vue'
 import Modal from './components/Modal.vue'
 import Toast from './components/Toast.vue'
 import HistoryModal from './components/HistoryModal.vue'
-import { getConfig, saveConfig, clearConfig, getSelectedMode, saveSelectedMode, getHistory, addToHistory, updateHistoryItem, deleteFromHistory } from './utils/storage.js'
-import { optimizePrompt } from './utils/api.js'
+import PreconditionModal from './components/PreconditionModal.vue'
+import { getConfig, saveConfig, clearConfig, getSelectedMode, saveSelectedMode, getHistory, addToHistory, updateHistoryItem, deleteFromHistory, getPrecondition, savePrecondition, clearPrecondition } from './utils/storage.js'
+import { hasCompleteOptimizationReport, iteratePrompt, optimizePrompt } from './utils/api.js'
 import { copyToClipboard } from './utils/clipboard.js'
 import { DEFAULT_PROMPT_MODE_ID, PROMPT_MODES, getPromptMode } from './utils/promptModes.js'
 
@@ -364,7 +381,14 @@ const config = ref(null)
 const history = ref([])
 const optimizedResult = ref('')
 const optimizationResult = ref(null)
+const originalPrompt = ref('')
+const iterationHistory = ref([])
+const activeIterationId = ref(null)
+const precondition = ref('')
+const preconditionModalOpen = ref(false)
+const activePreconditionSnapshot = ref('')
 const isLoading = ref(false)
+const isIterating = ref(false)
 const error = ref('')
 const promptModes = PROMPT_MODES
 const selectedMode = ref(DEFAULT_PROMPT_MODE_ID)
@@ -395,6 +419,7 @@ onMounted(() => {
   config.value = getConfig()
   history.value = getHistory()
   selectedMode.value = getPromptMode(getSelectedMode()).id
+  precondition.value = getPrecondition()
 
   if (floatMenuRef.value) {
     floatMenuRef.value.checkShouldShow()
@@ -419,6 +444,26 @@ function handleConfigClear () {
   }
 }
 
+function handlePreconditionSave (value) {
+  if (savePrecondition(value)) {
+    precondition.value = value
+    preconditionModalOpen.value = false
+    showToast('前置条件已保存', 'success')
+  } else {
+    showToast('前置条件保存失败', 'error')
+  }
+}
+
+function handlePreconditionClear () {
+  if (clearPrecondition()) {
+    precondition.value = ''
+    preconditionModalOpen.value = false
+    showToast('前置条件已清空', 'info')
+  } else {
+    showToast('前置条件清空失败', 'error')
+  }
+}
+
 // Optimize handler
 async function handleOptimize (prompt) {
   if (!config.value) {
@@ -437,11 +482,29 @@ async function handleOptimize (prompt) {
   error.value = ''
   optimizedResult.value = ''
   optimizationResult.value = null
+  originalPrompt.value = ''
+  iterationHistory.value = []
+  activeIterationId.value = null
+  activePreconditionSnapshot.value = ''
+  const preconditionSnapshot = precondition.value
 
   try {
-    const result = await optimizePrompt(config.value, prompt, selectedMode.value)
-    optimizationResult.value = result
-    optimizedResult.value = result.optimizedPrompt || ''
+    const result = await optimizePrompt(config.value, prompt, selectedMode.value, preconditionSnapshot)
+    const mode = getPromptMode(selectedMode.value)
+    const version = createIterationVersion({
+      type: 'initial',
+      instruction: '初始版本',
+      modeId: mode.id,
+      modeName: mode.name,
+      result,
+      precondition: preconditionSnapshot,
+      index: 0
+    })
+    originalPrompt.value = prompt
+    activePreconditionSnapshot.value = preconditionSnapshot
+    iterationHistory.value = [version]
+    activeIterationId.value = version.id
+    syncResultFromVersion(version)
     if (resultDisplayRef.value) {
       resultDisplayRef.value.viewMode = 'markdown'
     }
@@ -457,10 +520,79 @@ async function handleOptimize (prompt) {
 function handleClearPrompt () {
   optimizedResult.value = ''
   optimizationResult.value = null
+  originalPrompt.value = ''
+  iterationHistory.value = []
+  activeIterationId.value = null
+  activePreconditionSnapshot.value = ''
   error.value = ''
   if (promptInputRef.value) {
     promptInputRef.value.promptText = ''
   }
+}
+
+async function handleIterate (instruction) {
+  const currentVersion = getActiveIteration()
+  const normalizedInstruction = String(instruction || '').trim()
+
+  if (!config.value) {
+    showToast('请先配置 API 信息', 'error')
+    if (floatMenuRef.value) {
+      floatMenuRef.value.isOpen = true
+    }
+    return
+  }
+  if (!currentVersion || !currentVersion.optimizedPrompt) {
+    showToast('请先完成一次优化', 'error')
+    return
+  }
+  if (!normalizedInstruction) {
+    showToast('请输入迭代要求', 'error')
+    return
+  }
+
+  isIterating.value = true
+  error.value = ''
+
+  try {
+    const result = await iteratePrompt(config.value, {
+      modeId: currentVersion.modeId || selectedMode.value,
+      originalPrompt: originalPrompt.value,
+      currentPrompt: currentVersion.optimizedPrompt,
+      instruction: normalizedInstruction,
+      diagnosis: currentVersion.diagnosis,
+      score: currentVersion.score,
+      precondition: activePreconditionSnapshot.value
+    })
+
+    if (!hasCompleteOptimizationReport(result)) {
+      throw new Error('模型返回的迭代结果缺少诊断报告或评分，已保留当前版本')
+    }
+
+    const version = createIterationVersion({
+      type: 'iteration',
+      instruction: normalizedInstruction,
+      modeId: currentVersion.modeId || selectedMode.value,
+      modeName: currentVersion.modeName || getPromptMode(selectedMode.value).name,
+      result,
+      precondition: activePreconditionSnapshot.value,
+      index: iterationHistory.value.length
+    })
+    iterationHistory.value = [...iterationHistory.value, version]
+    activeIterationId.value = version.id
+    syncResultFromVersion(version)
+    showToast('已生成新版本', 'success')
+  } catch (e) {
+    showToast(e.message || '继续迭代失败，已保留当前版本', 'error')
+  } finally {
+    isIterating.value = false
+  }
+}
+
+function handleSwitchIteration (id) {
+  const version = iterationHistory.value.find(item => item.id === id)
+  if (!version) return
+  activeIterationId.value = id
+  syncResultFromVersion(version)
 }
 
 // Save handler
@@ -482,7 +614,13 @@ function handleSave () {
       modeName: mode.name,
       diagnosis: optimizationResult.value?.diagnosis || null,
       score: optimizationResult.value?.score || null,
+      diagnosisStale: Boolean(optimizationResult.value?.diagnosisStale),
+      scoreStale: Boolean(optimizationResult.value?.scoreStale),
       rawResult: optimizationResult.value?.rawContent || null,
+      originalPrompt: originalPrompt.value,
+      precondition: activePreconditionSnapshot.value,
+      iterationHistory: iterationHistory.value,
+      activeIterationId: activeIterationId.value,
       createdAt: new Date().toISOString()
     }
     addToHistory(item)
@@ -522,12 +660,25 @@ function handleHistoryCopy (item) {
 
 // History handlers
 function handleLoadHistory (item) {
-  optimizedResult.value = item.content
-  optimizationResult.value = {
-    diagnosis: item.diagnosis || null,
-    score: item.score || null,
-    optimizedPrompt: item.content,
-    rawContent: item.rawResult || item.content
+  const versions = normalizeIterationHistory(item)
+  originalPrompt.value = item.originalPrompt || ''
+  iterationHistory.value = versions
+  activeIterationId.value = versions.find(version => version.id === item.activeIterationId)?.id || versions[versions.length - 1]?.id || null
+
+  const activeVersion = getActiveIteration()
+  if (activeVersion) {
+    activePreconditionSnapshot.value = item.precondition || activeVersion.precondition || ''
+    selectedMode.value = getPromptMode(activeVersion.modeId).id
+    syncResultFromVersion(activeVersion)
+  } else {
+    activePreconditionSnapshot.value = item.precondition || ''
+    optimizedResult.value = item.content
+    optimizationResult.value = {
+      diagnosis: item.diagnosis || null,
+      score: item.score || null,
+      optimizedPrompt: item.content,
+      rawContent: item.rawResult || item.content
+    }
   }
   error.value = ''
   historyOpen.value = false
@@ -539,9 +690,22 @@ function handleResultUpdate (value) {
   if (optimizationResult.value) {
     optimizationResult.value = {
       ...optimizationResult.value,
-      optimizedPrompt: value
+      diagnosisStale: Boolean(optimizationResult.value.diagnosis),
+      scoreStale: Boolean(optimizationResult.value.score),
+      optimizedPrompt: value,
+      rawContent: value
     }
   }
+  iterationHistory.value = iterationHistory.value.map(version => {
+    if (version.id !== activeIterationId.value) return version
+    return {
+      ...version,
+      diagnosisStale: Boolean(version.diagnosis),
+      scoreStale: Boolean(version.score),
+      optimizedPrompt: value,
+      rawContent: value
+    }
+  })
 }
 
 function handleOpenHistory () {
@@ -554,11 +718,28 @@ function handleOpenHistoryItem (item) {
 }
 
 function handleHistoryModalSave (updatedItem) {
+  const updatedIterationHistory = Array.isArray(updatedItem.iterationHistory)
+    ? updatedItem.iterationHistory.map(version => {
+      if (version.id !== updatedItem.activeIterationId) return version
+      return {
+        ...version,
+        diagnosisStale: Boolean(version.diagnosis),
+        scoreStale: Boolean(version.score),
+        optimizedPrompt: updatedItem.content,
+        rawContent: updatedItem.content
+      }
+    })
+    : null
   const updates = {
     content: updatedItem.content,
-    diagnosis: null,
-    score: null,
-    rawResult: null
+    diagnosis: updatedItem.diagnosis || null,
+    score: updatedItem.score || null,
+    diagnosisStale: Boolean(updatedItem.diagnosis),
+    scoreStale: Boolean(updatedItem.score),
+    rawResult: updatedItem.content,
+    precondition: updatedItem.precondition || '',
+    iterationHistory: updatedIterationHistory,
+    activeIterationId: updatedItem.activeIterationId || null
   }
   updateHistoryItem(updatedItem.id, updates)
   history.value = getHistory()
@@ -597,6 +778,80 @@ function formatTime (isoString) {
     hour: '2-digit',
     minute: '2-digit'
   })
+}
+
+function createIterationVersion ({ type, instruction, modeId, modeName, result, precondition, index }) {
+  const versionNumber = index + 1
+  return {
+    id: uuidv4(),
+    type,
+    instruction,
+    title: type === 'initial' ? '版本 1：初始版本' : `版本 ${versionNumber}：${instruction}`,
+    modeId,
+    modeName,
+    precondition: precondition || '',
+    diagnosis: result.diagnosis || null,
+    score: result.score || null,
+    diagnosisStale: false,
+    scoreStale: false,
+    optimizedPrompt: result.optimizedPrompt || '',
+    rawContent: result.rawContent || result.optimizedPrompt || '',
+    createdAt: new Date().toISOString()
+  }
+}
+
+function normalizeIterationHistory (item) {
+  if (Array.isArray(item.iterationHistory) && item.iterationHistory.length > 0) {
+    return item.iterationHistory.map((version, index) => ({
+      id: version.id || uuidv4(),
+      type: version.type === 'iteration' ? 'iteration' : 'initial',
+      instruction: version.instruction || (index === 0 ? '初始版本' : '继续优化'),
+      title: version.title || `版本 ${index + 1}：${version.instruction || (index === 0 ? '初始版本' : '继续优化')}`,
+      modeId: version.modeId || item.modeId || DEFAULT_PROMPT_MODE_ID,
+      modeName: version.modeName || item.modeName || getPromptMode(item.modeId).name,
+      precondition: version.precondition || item.precondition || '',
+      diagnosis: version.diagnosis || null,
+      score: version.score || null,
+      diagnosisStale: Boolean(version.diagnosisStale),
+      scoreStale: Boolean(version.scoreStale),
+      optimizedPrompt: version.optimizedPrompt || version.content || item.content || '',
+      rawContent: version.rawContent || version.rawResult || version.optimizedPrompt || version.content || item.content || '',
+      createdAt: version.createdAt || item.createdAt || new Date().toISOString()
+    }))
+  }
+
+  return [{
+    id: uuidv4(),
+    type: 'initial',
+    instruction: '初始版本',
+    title: '版本 1：初始版本',
+    modeId: item.modeId || DEFAULT_PROMPT_MODE_ID,
+    modeName: item.modeName || getPromptMode(item.modeId).name,
+    precondition: item.precondition || '',
+    diagnosis: item.diagnosis || null,
+    score: item.score || null,
+    diagnosisStale: Boolean(item.diagnosisStale),
+    scoreStale: Boolean(item.scoreStale),
+    optimizedPrompt: item.content || '',
+    rawContent: item.rawResult || item.content || '',
+    createdAt: item.createdAt || new Date().toISOString()
+  }]
+}
+
+function getActiveIteration () {
+  return iterationHistory.value.find(item => item.id === activeIterationId.value) || null
+}
+
+function syncResultFromVersion (version) {
+  optimizedResult.value = version.optimizedPrompt || ''
+  optimizationResult.value = {
+    diagnosis: version.diagnosis || null,
+    score: version.score || null,
+    diagnosisStale: Boolean(version.diagnosisStale),
+    scoreStale: Boolean(version.scoreStale),
+    optimizedPrompt: version.optimizedPrompt || '',
+    rawContent: version.rawContent || version.optimizedPrompt || ''
+  }
 }
 
 // Modal confirm
