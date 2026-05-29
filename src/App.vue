@@ -415,51 +415,84 @@ const historyModalItem = ref(null)
 const copiedId = ref(null)
 
 // Load config and history on mount
-onMounted(() => {
-  config.value = getConfig()
-  history.value = getHistory()
-  selectedMode.value = getPromptMode(getSelectedMode()).id
-  precondition.value = getPrecondition()
+onMounted(async () => {
+  try {
+    const [cfg, hist, mode, pre] = await Promise.all([
+      getConfig(),
+      getHistory(),
+      getSelectedMode(),
+      getPrecondition()
+    ])
+    config.value = cfg
+    history.value = hist
+    selectedMode.value = getPromptMode(mode).id
+    precondition.value = pre
+  } catch (e) {
+    console.error('加载数据失败:', e)
+    showToast('加载数据失败，请刷新页面重试', 'error')
+  }
 
   if (floatMenuRef.value) {
     floatMenuRef.value.checkShouldShow()
   }
 })
 
-watch(selectedMode, (modeId) => {
-  saveSelectedMode(getPromptMode(modeId).id)
+watch(selectedMode, async (modeId) => {
+  try {
+    await saveSelectedMode(getPromptMode(modeId).id)
+  } catch (e) {
+    console.error('保存选中模式失败:', e)
+  }
 })
 
 // Config handlers
-function handleConfigUpdate (newConfig) {
+let configSaveTimer = null
+
+async function handleConfigUpdate (newConfig) {
   config.value = newConfig
-  saveConfig(newConfig)
-  showToast('配置已保存', 'success')
+  clearTimeout(configSaveTimer)
+  configSaveTimer = setTimeout(async () => {
+    try {
+      await saveConfig(config.value)
+      showToast('配置已保存', 'success')
+    } catch (e) {
+      console.error('保存配置失败:', e)
+      showToast('配置保存失败', 'error')
+    }
+  }, 500)
 }
 
-function handleConfigClear () {
-  if (clearConfig()) {
+async function handleConfigClear () {
+  try {
+    await clearConfig()
     config.value = null
     showToast('配置已清空', 'info')
+  } catch (e) {
+    console.error('清空配置失败:', e)
+    showToast('配置清空失败', 'error')
   }
 }
 
-function handlePreconditionSave (value) {
-  if (savePrecondition(value)) {
+async function handlePreconditionSave (value) {
+  try {
+    await savePrecondition(value)
     precondition.value = value
     preconditionModalOpen.value = false
     showToast('前置条件已保存', 'success')
-  } else {
+  } catch (e) {
+    console.error('保存前置条件失败:', e)
     showToast('前置条件保存失败', 'error')
   }
 }
 
-function handlePreconditionClear () {
-  if (clearPrecondition()) {
+async function handlePreconditionClear () {
+  try {
+    await clearPrecondition()
     precondition.value = ''
     preconditionModalOpen.value = false
     showToast('前置条件已清空', 'info')
-  } else {
+  } catch (e) {
+    console.error('清空前置条件失败:', e)
     showToast('前置条件清空失败', 'error')
   }
 }
@@ -604,27 +637,30 @@ function handleSave () {
   modalValue.value = `提示词_${now.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-').replace(/\s/, ' ')}`
   modalPlaceholder.value = '输入提示词名称'
 
-  modalCallback = (name) => {
+  modalCallback = async (name) => {
     const mode = getPromptMode(selectedMode.value)
+    const iterationSnapshot = cloneIterationHistory(iterationHistory.value)
+    const saveVersion = getSaveVersion(iterationSnapshot)
+    const savedContent = saveVersion?.optimizedPrompt || optimizedResult.value
     const item = {
       id: uuidv4(),
       name: name,
-      content: optimizedResult.value,
-      modeId: mode.id,
-      modeName: mode.name,
-      diagnosis: optimizationResult.value?.diagnosis || null,
-      score: optimizationResult.value?.score || null,
-      diagnosisStale: Boolean(optimizationResult.value?.diagnosisStale),
-      scoreStale: Boolean(optimizationResult.value?.scoreStale),
-      rawResult: optimizationResult.value?.rawContent || null,
+      content: savedContent,
+      modeId: saveVersion?.modeId || mode.id,
+      modeName: saveVersion?.modeName || mode.name,
+      diagnosis: saveVersion?.diagnosis || optimizationResult.value?.diagnosis || null,
+      score: saveVersion?.score || optimizationResult.value?.score || null,
+      diagnosisStale: Boolean(saveVersion?.diagnosisStale || optimizationResult.value?.diagnosisStale),
+      scoreStale: Boolean(saveVersion?.scoreStale || optimizationResult.value?.scoreStale),
+      rawResult: saveVersion?.rawContent || optimizationResult.value?.rawContent || savedContent,
       originalPrompt: originalPrompt.value,
-      precondition: activePreconditionSnapshot.value,
-      iterationHistory: iterationHistory.value,
-      activeIterationId: activeIterationId.value,
+      precondition: saveVersion?.precondition || activePreconditionSnapshot.value,
+      iterationHistory: iterationSnapshot,
+      activeIterationId: saveVersion?.id || activeIterationId.value,
       createdAt: new Date().toISOString()
     }
-    addToHistory(item)
-    history.value = getHistory()
+    await addToHistory(item)
+    history.value = await getHistory()
     showToast('已保存到历史记录', 'success')
   }
 
@@ -717,7 +753,7 @@ function handleOpenHistoryItem (item) {
   showHistoryModal.value = true
 }
 
-function handleHistoryModalSave (updatedItem) {
+async function handleHistoryModalSave (updatedItem) {
   const updatedIterationHistory = Array.isArray(updatedItem.iterationHistory)
     ? updatedItem.iterationHistory.map(version => {
       if (version.id !== updatedItem.activeIterationId) return version
@@ -741,10 +777,15 @@ function handleHistoryModalSave (updatedItem) {
     iterationHistory: updatedIterationHistory,
     activeIterationId: updatedItem.activeIterationId || null
   }
-  updateHistoryItem(updatedItem.id, updates)
-  history.value = getHistory()
-  historyModalItem.value = { ...updatedItem, ...updates }
-  showToast('已保存修改', 'success')
+  try {
+    await updateHistoryItem(updatedItem.id, updates)
+    history.value = await getHistory()
+    historyModalItem.value = { ...updatedItem, ...updates }
+    showToast('已保存修改', 'success')
+  } catch (e) {
+    console.error('保存历史记录修改失败:', e)
+    showToast('保存失败，请重试', 'error')
+  }
 }
 
 function handleRename (item) {
@@ -752,20 +793,25 @@ function handleRename (item) {
   modalValue.value = item.name
   modalPlaceholder.value = '输入新名称'
 
-  modalCallback = (newName) => {
-    updateHistoryItem(item.id, { name: newName })
-    history.value = getHistory()
+  modalCallback = async (newName) => {
+    await updateHistoryItem(item.id, { name: newName })
+    history.value = await getHistory()
     showToast('已重命名', 'success')
   }
 
   showModal.value = true
 }
 
-function handleDelete (item) {
+async function handleDelete (item) {
   if (confirm(`确定要删除「${item.name}」吗？`)) {
-    deleteFromHistory(item.id)
-    history.value = getHistory()
-    showToast('已删除', 'info')
+    try {
+      await deleteFromHistory(item.id)
+      history.value = await getHistory()
+      showToast('已删除', 'info')
+    } catch (e) {
+      console.error('删除历史记录失败:', e)
+      showToast('删除失败', 'error')
+    }
   }
 }
 
@@ -842,6 +888,24 @@ function getActiveIteration () {
   return iterationHistory.value.find(item => item.id === activeIterationId.value) || null
 }
 
+function getSaveVersion (versions) {
+  if (versions.length === 0) return null
+  return versions[versions.length - 1]
+}
+
+function cloneIterationHistory (versions) {
+  return versions.map(version => ({
+    ...version,
+    diagnosis: cloneJsonValue(version.diagnosis),
+    score: cloneJsonValue(version.score)
+  }))
+}
+
+function cloneJsonValue (value) {
+  if (value == null) return value
+  return JSON.parse(JSON.stringify(value))
+}
+
 function syncResultFromVersion (version) {
   optimizedResult.value = version.optimizedPrompt || ''
   optimizationResult.value = {
@@ -855,9 +919,15 @@ function syncResultFromVersion (version) {
 }
 
 // Modal confirm
-function handleModalConfirm (value) {
+async function handleModalConfirm (value) {
   if (modalCallback && value.trim()) {
-    modalCallback(value.trim())
+    try {
+      await modalCallback(value.trim())
+    } catch (e) {
+      console.error('Modal callback failed:', e)
+      showToast('操作失败: ' + (e.message || '未知错误'), 'error')
+      return
+    }
   }
   showModal.value = false
 }

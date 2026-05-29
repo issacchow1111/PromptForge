@@ -1,297 +1,300 @@
+import { db } from './db.js'
 import { getPromptMode } from './promptModes.js'
 
-const CONFIG_KEY = 'prompt_optimizer_config'
-const HISTORY_KEY = 'prompt_optimizer_history'
-const SELECTED_MODE_KEY = 'promptforge_selected_mode'
-const PRECONDITION_KEY = 'promptforge_precondition'
-const STORAGE_VERSION = '1'
 const MAX_HISTORY_ITEMS = 100
 const MAX_ITEM_LENGTH = 50000 // 单个提示词最大字符数
 
-/**
- * 检查 localStorage 是否可用
- */
-function isStorageAvailable () {
-  try {
-    const test = '__storage_test__'
-    localStorage.setItem(test, test)
-    localStorage.removeItem(test)
-    return true
-  } catch {
-    return false
-  }
-}
+let idbAvailable = true
 
-/**
- * 获取存储的元数据
- */
-function getStorageMeta () {
-  try {
-    const meta = localStorage.getItem('prompt_optimizer_meta')
-    return meta ? JSON.parse(meta) : { version: '0' }
-  } catch {
-    return { version: '0' }
-  }
-}
+db.open().catch(e => {
+  console.warn('IndexedDB 不可用，回退到 localStorage:', e)
+  idbAvailable = false
+})
 
-/**
- * 保存存储元数据
- */
-function setStorageMeta (meta) {
-  localStorage.setItem('prompt_optimizer_meta', JSON.stringify(meta))
-}
-
-/**
- * 数据迁移：旧版本数据格式升级
- */
-function migrateData () {
-  const meta = getStorageMeta()
-  if (meta.version === STORAGE_VERSION) return
-
-  // 版本 0 -> 1：添加 createdAt 字段（如果缺失）
-  if (meta.version < '1') {
-    try {
-      const history = getHistory()
-      const migrated = history.map(item => ({
-        ...item,
-        createdAt: item.createdAt || new Date().toISOString()
-      }))
-      saveHistory(migrated)
-    } catch {
-      // 迁移失败不影响使用
-    }
-  }
-
-  setStorageMeta({ version: STORAGE_VERSION, updatedAt: new Date().toISOString() })
-}
-
-/**
- * 检查并清理存储空间
- */
-function checkStorageQuota () {
-  try {
-    const history = getHistory()
-    if (history.length > MAX_HISTORY_ITEMS) {
-      const trimmed = history.slice(0, MAX_HISTORY_ITEMS)
-      saveHistory(trimmed)
-      console.warn(`历史记录超过 ${MAX_HISTORY_ITEMS} 条，已自动清理旧数据`)
-    }
-  } catch {
-    // 清理失败不阻断
-  }
-}
-
-/**
- * 验证历史记录项格式
- */
-function validateHistoryItem (item) {
-  if (!item || typeof item !== 'object') return false
-  if (!item.id || typeof item.id !== 'string') return false
-  if (!item.name || typeof item.name !== 'string') return false
-  if (!item.content || typeof item.content !== 'string') return false
-  if (item.content.length > MAX_ITEM_LENGTH) {
-    console.warn(`提示词内容过长 (${item.content.length} 字符)，已截断至 ${MAX_ITEM_LENGTH} 字符`)
-    item.content = item.content.slice(0, MAX_ITEM_LENGTH)
-  }
-  return true
-}
-
-// 初始化：执行迁移和清理
-if (isStorageAvailable()) {
-  migrateData()
-  checkStorageQuota()
-}
-
-export function getConfig () {
-  if (!isStorageAvailable()) return null
-  try {
-    const data = localStorage.getItem(CONFIG_KEY)
+// ========== 配置 ==========
+export async function getConfig () {
+  if (!idbAvailable) {
+    const data = localStorage.getItem('prompt_optimizer_config')
     return data ? JSON.parse(data) : null
+  }
+  try {
+    const record = await db.config.get('main')
+    return record?.value || null
   } catch (e) {
-    console.error('Failed to get config:', e)
+    console.error('getConfig failed:', e)
     return null
   }
 }
 
-export function saveConfig (config) {
-  if (!isStorageAvailable()) return false
+export async function saveConfig (config) {
+  if (!idbAvailable) {
+    localStorage.setItem('prompt_optimizer_config', JSON.stringify(config))
+    return true
+  }
   try {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
+    await db.config.put({ key: 'main', value: config })
     return true
   } catch (e) {
-    console.error('Failed to save config:', e)
+    console.error('saveConfig failed:', e)
     return false
   }
 }
 
-export function clearConfig () {
-  if (!isStorageAvailable()) return false
+export async function clearConfig () {
+  if (!idbAvailable) {
+    localStorage.removeItem('prompt_optimizer_config')
+    return true
+  }
   try {
-    localStorage.removeItem(CONFIG_KEY)
+    await db.config.delete('main')
     return true
   } catch (e) {
-    console.error('Failed to clear config:', e)
+    console.error('clearConfig failed:', e)
     return false
   }
 }
 
-export function getSelectedMode () {
-  if (!isStorageAvailable()) return null
-  try {
-    const modeId = localStorage.getItem(SELECTED_MODE_KEY)
+// ========== 选中模式 ==========
+export async function getSelectedMode () {
+  if (!idbAvailable) {
+    const modeId = localStorage.getItem('promptforge_selected_mode')
     if (!modeId) return null
-
     const validModeId = getPromptMode(modeId).id
     if (validModeId !== modeId) {
-      localStorage.setItem(SELECTED_MODE_KEY, validModeId)
+      localStorage.setItem('promptforge_selected_mode', validModeId)
+    }
+    return validModeId
+  }
+  try {
+    const record = await db.kv.get('selectedMode')
+    if (!record?.value) return null
+    const validModeId = getPromptMode(record.value).id
+    if (validModeId !== record.value) {
+      await db.kv.put({ key: 'selectedMode', value: validModeId })
     }
     return validModeId
   } catch (e) {
-    console.error('Failed to get selected mode:', e)
+    console.error('getSelectedMode failed:', e)
     return null
   }
 }
 
-export function saveSelectedMode (modeId) {
-  if (!isStorageAvailable()) return false
+export async function saveSelectedMode (modeId) {
+  if (!idbAvailable) {
+    localStorage.setItem('promptforge_selected_mode', getPromptMode(modeId).id)
+    return true
+  }
   try {
-    localStorage.setItem(SELECTED_MODE_KEY, getPromptMode(modeId).id)
+    await db.kv.put({ key: 'selectedMode', value: getPromptMode(modeId).id })
     return true
   } catch (e) {
-    console.error('Failed to save selected mode:', e)
+    console.error('saveSelectedMode failed:', e)
     return false
   }
 }
 
-export function getPrecondition () {
-  if (!isStorageAvailable()) return ''
+// ========== 前置条件 ==========
+export async function getPrecondition () {
+  if (!idbAvailable) {
+    return localStorage.getItem('promptforge_precondition') || ''
+  }
   try {
-    return localStorage.getItem(PRECONDITION_KEY) || ''
+    const record = await db.kv.get('precondition')
+    return record?.value || ''
   } catch (e) {
-    console.error('Failed to get precondition:', e)
+    console.error('getPrecondition failed:', e)
     return ''
   }
 }
 
-export function savePrecondition (value) {
-  if (!isStorageAvailable()) return false
+export async function savePrecondition (value) {
+  if (!idbAvailable) {
+    localStorage.setItem('promptforge_precondition', String(value || ''))
+    return true
+  }
   try {
-    localStorage.setItem(PRECONDITION_KEY, String(value || ''))
+    await db.kv.put({ key: 'precondition', value: String(value || '') })
     return true
   } catch (e) {
-    console.error('Failed to save precondition:', e)
+    console.error('savePrecondition failed:', e)
     return false
   }
 }
 
-export function clearPrecondition () {
-  if (!isStorageAvailable()) return false
+export async function clearPrecondition () {
+  if (!idbAvailable) {
+    localStorage.removeItem('promptforge_precondition')
+    return true
+  }
   try {
-    localStorage.removeItem(PRECONDITION_KEY)
+    await db.kv.delete('precondition')
     return true
   } catch (e) {
-    console.error('Failed to clear precondition:', e)
+    console.error('clearPrecondition failed:', e)
     return false
   }
 }
 
-export function getHistory () {
-  if (!isStorageAvailable()) return []
-  try {
-    const data = localStorage.getItem(HISTORY_KEY)
+// ========== 历史记录 ==========
+export async function getHistory () {
+  if (!idbAvailable) {
+    const data = localStorage.getItem('prompt_optimizer_history')
     return data ? JSON.parse(data) : []
+  }
+  try {
+    return await db.history
+      .orderBy('createdAt')
+      .reverse()
+      .limit(MAX_HISTORY_ITEMS)
+      .toArray()
   } catch (e) {
-    console.error('Failed to get history:', e)
+    console.error('getHistory failed:', e)
     return []
   }
 }
 
-export function saveHistory (history) {
-  if (!isStorageAvailable()) return false
+export async function saveHistory (history) {
+  if (!idbAvailable) {
+    try {
+      localStorage.setItem('prompt_optimizer_history', JSON.stringify(history))
+      return true
+    } catch (e) {
+      if (e.name === 'QuotaExceededError') {
+        const trimmed = history.slice(0, Math.floor(history.length * 0.7))
+        localStorage.setItem('prompt_optimizer_history', JSON.stringify(trimmed))
+        return true
+      }
+      return false
+    }
+  }
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history))
+    await db.transaction('rw', db.history, async () => {
+      await db.history.clear()
+      await db.history.bulkAdd(history.slice(0, MAX_HISTORY_ITEMS))
+    })
     return true
   } catch (e) {
-    // 存储空间不足时自动清理
-    if (e.name === 'QuotaExceededError') {
-      console.warn('存储空间不足，正在清理旧数据...')
-      const trimmed = history.slice(0, Math.floor(history.length * 0.7))
-      try {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed))
-        return true
-      } catch {
-        console.error('清理后仍无法保存')
-        return false
-      }
-    }
-    console.error('Failed to save history:', e)
+    console.error('saveHistory failed:', e)
     return false
   }
 }
 
-export function addToHistory (item) {
+export async function addToHistory (item) {
   if (!validateHistoryItem(item)) {
     console.error('Invalid history item:', item)
     return false
   }
-  const history = getHistory()
-  // 避免重复添加相同内容
-  const duplicate = history.find(h => h.content === item.content)
-  if (duplicate) {
-    // 更新名称和时间
-    updateHistoryItem(duplicate.id, {
-      name: item.name,
-      createdAt: item.createdAt,
-      modeId: item.modeId,
-      modeName: item.modeName,
-      diagnosis: item.diagnosis,
-      score: item.score,
-      diagnosisStale: item.diagnosisStale,
-      scoreStale: item.scoreStale,
-      rawResult: item.rawResult,
-      originalPrompt: item.originalPrompt,
-      precondition: item.precondition,
-      iterationHistory: item.iterationHistory,
-      activeIterationId: item.activeIterationId
-    })
-    return true
-  }
-  history.unshift(item)
-  // 限制数量
-  if (history.length > MAX_HISTORY_ITEMS) {
-    history.length = MAX_HISTORY_ITEMS
-  }
-  return saveHistory(history)
-}
-
-export function updateHistoryItem (id, updates) {
-  const history = getHistory()
-  const index = history.findIndex(item => item.id === id)
-  if (index !== -1) {
-    history[index] = { ...history[index], ...updates }
+  if (!idbAvailable) {
+    const history = JSON.parse(localStorage.getItem('prompt_optimizer_history') || '[]')
+    history.unshift(item)
+    if (history.length > MAX_HISTORY_ITEMS) {
+      history.length = MAX_HISTORY_ITEMS
+    }
     return saveHistory(history)
   }
-  return false
-}
-
-export function deleteFromHistory (id) {
-  const history = getHistory()
-  const filtered = history.filter(item => item.id !== id)
-  return saveHistory(filtered)
-}
-
-/**
- * 导出所有数据为 JSON 文件
- */
-export function exportData () {
-  const data = {
-    config: getConfig(),
-    selectedMode: getSelectedMode(),
-    precondition: getPrecondition(),
-    history: getHistory(),
-    exportedAt: new Date().toISOString(),
-    version: STORAGE_VERSION
+  try {
+    await db.history.add(item)
+    const count = await db.history.count()
+    if (count > MAX_HISTORY_ITEMS) {
+      const oldest = await db.history
+        .orderBy('createdAt')
+        .limit(count - MAX_HISTORY_ITEMS)
+        .primaryKeys()
+      await db.history.bulkDelete(oldest)
+    }
+    return true
+  } catch (e) {
+    if (e.name === 'ConstraintError') {
+      await db.history.put(item)
+      return true
+    }
+    console.error('addToHistory failed:', e)
+    return false
   }
+}
+
+export async function updateHistoryItem (id, updates) {
+  if (!idbAvailable) {
+    const history = JSON.parse(localStorage.getItem('prompt_optimizer_history') || '[]')
+    const index = history.findIndex(item => item.id === id)
+    if (index !== -1) {
+      history[index] = { ...history[index], ...updates }
+      return saveHistory(history)
+    }
+    return false
+  }
+  try {
+    await db.history.update(id, updates)
+    return true
+  } catch (e) {
+    console.error('updateHistoryItem failed:', e)
+    return false
+  }
+}
+
+export async function deleteFromHistory (id) {
+  if (!idbAvailable) {
+    const history = JSON.parse(localStorage.getItem('prompt_optimizer_history') || '[]')
+    const filtered = history.filter(item => item.id !== id)
+    return saveHistory(filtered)
+  }
+  try {
+    await db.history.delete(id)
+    return true
+  } catch (e) {
+    console.error('deleteFromHistory failed:', e)
+    return false
+  }
+}
+
+// ========== 搜索（新增）==========
+export async function searchHistory (keyword) {
+  if (!keyword.trim()) return getHistory()
+  const lower = keyword.toLowerCase()
+  if (!idbAvailable) {
+    const data = localStorage.getItem('prompt_optimizer_history')
+    const all = data ? JSON.parse(data) : []
+    return all
+      .filter(item =>
+        item.name.toLowerCase().includes(lower) ||
+        item.content.toLowerCase().includes(lower)
+      )
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 50)
+  }
+  try {
+    const all = await db.history.toArray()
+    return all
+      .filter(item =>
+        item.name.toLowerCase().includes(lower) ||
+        item.content.toLowerCase().includes(lower)
+      )
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 50)
+  } catch (e) {
+    console.error('searchHistory failed:', e)
+    return []
+  }
+}
+
+// ========== 导入/导出 ==========
+export async function exportData () {
+  const [config, selectedMode, precondition, history] = await Promise.all([
+    getConfig(),
+    idbAvailable ? db.kv.get('selectedMode') : { value: localStorage.getItem('promptforge_selected_mode') },
+    idbAvailable ? db.kv.get('precondition') : { value: localStorage.getItem('promptforge_precondition') },
+    getHistory()
+  ])
+
+  const data = {
+    config,
+    selectedMode: selectedMode?.value || null,
+    precondition: precondition?.value || '',
+    history,
+    exportedAt: new Date().toISOString(),
+    version: '1'
+  }
+
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -301,22 +304,38 @@ export function exportData () {
   URL.revokeObjectURL(url)
 }
 
-/**
- * 从 JSON 文件导入数据
- */
-export function importData (jsonString) {
+export async function importData (jsonString) {
   try {
     const data = JSON.parse(jsonString)
-    if (data.config) saveConfig(data.config)
-    if (data.selectedMode) saveSelectedMode(data.selectedMode)
-    if (typeof data.precondition === 'string') savePrecondition(data.precondition)
+    if (data.config) await saveConfig(data.config)
+    if (data.selectedMode) await saveSelectedMode(data.selectedMode)
+    if (typeof data.precondition === 'string') await savePrecondition(data.precondition)
     if (data.history && Array.isArray(data.history)) {
       const valid = data.history.filter(validateHistoryItem)
-      saveHistory(valid)
+      if (idbAvailable) {
+        await db.transaction('rw', db.history, async () => {
+          await db.history.clear()
+          await db.history.bulkAdd(valid)
+        })
+      } else {
+        await saveHistory(valid)
+      }
     }
     return true
   } catch (e) {
     console.error('Failed to import data:', e)
     return false
   }
+}
+
+// ========== 工具函数 ==========
+function validateHistoryItem (item) {
+  if (!item || typeof item !== 'object') return false
+  if (!item.id || typeof item.id !== 'string') return false
+  if (!item.name || typeof item.name !== 'string') return false
+  if (!item.content || typeof item.content !== 'string') return false
+  if (item.content.length > MAX_ITEM_LENGTH) {
+    item.content = item.content.slice(0, MAX_ITEM_LENGTH)
+  }
+  return true
 }
