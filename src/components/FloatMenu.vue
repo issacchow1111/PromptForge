@@ -31,8 +31,18 @@
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.67 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.67a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
             <span class="menu-section-title">API 配置</span>
-            <span v-if="hasConfig" class="menu-status configured">已配置</span>
-            <span v-else class="menu-status unconfigured">未配置</span>
+            <span
+              v-if="hasUserKey"
+              class="menu-status configured"
+            >已配置</span>
+            <span
+              v-else-if="hasConfig"
+              class="menu-status proxy"
+            >代理模式</span>
+            <span
+              v-else
+              class="menu-status unconfigured"
+            >未配置</span>
             <svg class="chevron" :class="{ expanded: configExpanded || !hasConfig }" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="6 9 12 15 18 9"/>
             </svg>
@@ -81,6 +91,10 @@
                   @input="emitUpdate"
                 />
               </div>
+
+              <p v-if="props.proxyAvailable && !hasUserKey" class="proxy-hint">
+                未填写 API Key，将使用服务端代理发送请求
+              </p>
 
               <button v-if="hasConfig" class="btn-clear" @click="handleClear">
                 清空配置
@@ -172,6 +186,10 @@ const props = defineProps({
     type: Object,
     default: null
   },
+  proxyAvailable: {
+    type: Boolean,
+    default: false
+  },
   history: {
     type: Array,
     default: () => []
@@ -201,7 +219,11 @@ const emptyConfig = {
 const localConfig = ref({ ...emptyConfig })
 
 const hasConfig = computed(() => {
-  return !!(localConfig.value.apiKey && localConfig.value.baseURL && localConfig.value.model)
+  return !!(localConfig.value.baseURL && localConfig.value.model)
+})
+
+const hasUserKey = computed(() => {
+  return !!localConfig.value.apiKey
 })
 
 watch(() => props.config, (newConfig) => {
@@ -295,7 +317,7 @@ onUnmounted(() => {
 })
 
 function checkShouldShow() {
-  if (!props.config || !props.config.apiKey) {
+  if (!props.proxyAvailable && !hasConfig.value) {
     isOpen.value = true
     configExpanded.value = true
   }
@@ -409,6 +431,11 @@ defineExpose({
   color: #ef6c00;
 }
 
+.menu-status.proxy {
+  background: rgba(0, 113, 227, 0.12);
+  color: #005bb5;
+}
+
 .menu-badge {
   background: var(--accent);
   color: white;
@@ -485,6 +512,16 @@ defineExpose({
 
 .btn-clear:hover {
   text-decoration: underline;
+}
+
+.proxy-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  margin: 0;
 }
 
 /* Divider */

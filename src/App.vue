@@ -48,6 +48,7 @@
       <PromptInput
         ref="promptInputRef"
         :has-config="!!config"
+        :proxy-available="proxyAvailable"
         :is-loading="isLoading"
         :modes="promptModes"
         :precondition="precondition"
@@ -79,6 +80,7 @@
     <FloatMenu
       ref="floatMenuRef"
       :config="config"
+      :proxy-available="proxyAvailable"
       :history="history"
       @update:config="handleConfigUpdate"
       @clear="handleConfigClear"
@@ -396,6 +398,7 @@ const resultDisplayRef = ref(null)
 const promptInputRef = ref(null)
 const floatMenuRef = ref(null)
 const historyOpen = ref(false)
+const proxyAvailable = ref(false)
 
 // Modal state
 const showModal = ref(false)
@@ -430,6 +433,17 @@ onMounted(async () => {
   } catch (e) {
     console.error('加载数据失败:', e)
     showToast('加载数据失败，请刷新页面重试', 'error')
+  }
+
+  // Detect whether backend proxy is available
+  try {
+    const res = await fetch('/api/health')
+    if (res.ok) {
+      const data = await res.json()
+      proxyAvailable.value = !!data.proxyConfigured
+    }
+  } catch (e) {
+    proxyAvailable.value = false
   }
 
   if (floatMenuRef.value) {
@@ -499,7 +513,8 @@ async function handlePreconditionClear () {
 
 // Optimize handler
 async function handleOptimize (prompt) {
-  if (!config.value) {
+  const hasDirectConfig = config.value?.apiKey && config.value?.baseURL && config.value?.model
+  if (!hasDirectConfig && !proxyAvailable.value) {
     showToast('请先配置 API 信息', 'error')
     if (floatMenuRef.value) {
       floatMenuRef.value.isOpen = true
@@ -566,8 +581,9 @@ function handleClearPrompt () {
 async function handleIterate (instruction) {
   const currentVersion = getActiveIteration()
   const normalizedInstruction = String(instruction || '').trim()
+  const hasDirectConfig = config.value?.apiKey && config.value?.baseURL && config.value?.model
 
-  if (!config.value) {
+  if (!hasDirectConfig && !proxyAvailable.value) {
     showToast('请先配置 API 信息', 'error')
     if (floatMenuRef.value) {
       floatMenuRef.value.isOpen = true

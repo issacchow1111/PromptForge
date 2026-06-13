@@ -99,6 +99,17 @@ function createPromptMessage (userPrompt, precondition = '') {
   return `【全局前置条件】\n${normalizedPrecondition}\n\n【待优化提示词】\n${userPrompt}`
 }
 
+export function shouldUseProxy (config) {
+  return !config?.apiKey
+}
+
+function validateDirectConfig (config) {
+  const { baseURL, apiKey, model } = config || {}
+  if (!baseURL || !apiKey || !model) {
+    throw new Error('API 配置不完整，请检查 Base URL、API Key 和模型名称')
+  }
+}
+
 /**
  * 带超时的 fetch 封装
  */
@@ -122,6 +133,34 @@ async function fetchWithTimeout (url, options = {}, timeout = REQUEST_TIMEOUT) {
   }
 }
 
+function handleNetworkError (error) {
+  if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+    throw new Error('网络连接失败，请检查网络或 API 地址是否正确')
+  }
+  if (error.message?.includes('CORS')) {
+    throw new Error('跨域请求被阻止，请确认 API 服务支持跨域访问')
+  }
+  throw error
+}
+
+function parseProxyResponse (data) {
+  if (!data || !data.choices || !data.choices[0] || !data.choices[0].message) {
+    throw new Error('代理返回数据格式异常，请检查服务端配置')
+  }
+  return parseOptimizationResult(data.choices[0].message.content)
+}
+
+async function handleProxyError (response) {
+  let message = `请求失败 (${response.status})`
+  try {
+    const errorData = await response.json()
+    message = errorData.error?.message || errorData.error?.code || errorData.message || message
+  } catch {
+    // ignore parse error
+  }
+  throw new Error(message)
+}
+
 /**
  * 优化提示词
  * @param {Object} config - API 配置
@@ -131,65 +170,79 @@ async function fetchWithTimeout (url, options = {}, timeout = REQUEST_TIMEOUT) {
  * @returns {Promise<Object>} 结构化优化结果
  */
 export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMPT_MODE_ID, precondition = '') {
-  const { baseURL, apiKey, model } = config
+  const useProxy = shouldUseProxy(config)
 
-  if (!baseURL || !apiKey || !model) {
-    throw new Error('API 配置不完整，请检查 Base URL、API Key 和模型名称')
+  if (!useProxy) {
+    validateDirectConfig(config)
   }
 
-  const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
+  if (!useProxy) {
+    const { baseURL, apiKey, model } = config
+    const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
 
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: getSystemPrompt(modeId) },
-          { role: 'user', content: createPromptMessage(userPrompt, precondition) }
-        ]
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'system', content: getSystemPrompt(modeId) },
+            { role: 'user', content: createPromptMessage(userPrompt, precondition) }
+          ]
+        })
       })
-    })
 
-    if (!response.ok) {
-      let errorMessage = `请求失败: ${response.status}`
-      try {
-        const errorData = await response.json()
-        errorMessage = errorData.error?.message
-          || errorData.error?.code
-          || errorData.message
-          || `请求失败 (${response.status})`
-      } catch {
-        // 解析失败，使用默认错误信息
-        if (response.status === 401) errorMessage = 'API Key 无效或已过期'
-        else if (response.status === 429) errorMessage = '请求过于频繁，请稍后重试'
-        else if (response.status === 500) errorMessage = '服务器内部错误，请稍后重试'
-        else if (response.status === 503) errorMessage = '服务暂不可用，请稍后重试'
+      if (!response.ok) {
+        let errorMessage = `请求失败: ${response.status}`
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error?.message
+            || errorData.error?.code
+            || errorData.message
+            || `请求失败 (${response.status})`
+        } catch {
+          if (response.status === 401) errorMessage = 'API Key 无效或已过期'
+          else if (response.status === 429) errorMessage = '请求过于频繁，请稍后重试'
+          else if (response.status === 500) errorMessage = '服务器内部错误，请稍后重试'
+          else if (response.status === 503) errorMessage = '服务暂不可用，请稍后重试'
+        }
+        throw new Error(errorMessage)
       }
-      throw new Error(errorMessage)
-    }
 
-    const data = await response.json()
+      const data = await response.json()
 
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      throw new Error('API 返回数据格式异常，请检查模型是否兼容 OpenAI 格式')
-    }
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        throw new Error('API 返回数据格式异常，请检查模型是否兼容 OpenAI 格式')
+      }
 
-    return parseOptimizationResult(data.choices[0].message.content)
-  } catch (error) {
-    // 网络错误分类
-    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-      throw new Error('网络连接失败，请检查网络或 API 地址是否正确')
+      return parseOptimizationResult(data.choices[0].message.content)
+    } catch (error) {
+      handleNetworkError(error)
     }
-    if (error.message?.includes('CORS')) {
-      throw new Error('跨域请求被阻止，请确认 API 服务支持跨域访问')
-    }
-    throw error
   }
+
+  // Proxy mode
+  const response = await fetchWithTimeout('/api/proxy/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      modeId,
+      userPrompt,
+      precondition,
+      type: 'optimize'
+    })
+  })
+
+  if (!response.ok) {
+    await handleProxyError(response)
+  }
+
+  const result = await response.json()
+  return parseProxyResponse(result.data)
 }
 
 /**
@@ -199,17 +252,16 @@ export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMP
  * @returns {Promise<Object>} 结构化优化结果
  */
 export async function iteratePrompt (config, payload) {
-  const { baseURL, apiKey, model } = config
+  const useProxy = shouldUseProxy(config)
 
-  if (!baseURL || !apiKey || !model) {
-    throw new Error('API 配置不完整，请检查 Base URL、API Key 和模型名称')
+  if (!useProxy) {
+    validateDirectConfig(config)
   }
 
   if (!payload?.currentPrompt || !payload?.instruction) {
     throw new Error('迭代信息不完整，请检查当前版本和迭代要求')
   }
 
-  const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
   const iterationContext = {
     modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
     originalPrompt: payload.originalPrompt || '',
@@ -220,55 +272,77 @@ export async function iteratePrompt (config, payload) {
     score: payload.score || null
   }
 
-  try {
-    const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: ITERATION_SYSTEM_PROMPT },
-          { role: 'user', content: JSON.stringify(iterationContext, null, 2) }
-        ]
+  if (!useProxy) {
+    const { baseURL, apiKey, model } = config
+    const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
+
+    try {
+      const response = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            { role: 'system', content: ITERATION_SYSTEM_PROMPT },
+            { role: 'user', content: JSON.stringify(iterationContext, null, 2) }
+          ]
+        })
       })
-    })
 
-    if (!response.ok) {
-      let errorMessage = `请求失败: ${response.status}`
-      try {
-        const errorData = await response.json()
-        errorMessage = errorData.error?.message
-          || errorData.error?.code
-          || errorData.message
-          || `请求失败 (${response.status})`
-      } catch {
-        if (response.status === 401) errorMessage = 'API Key 无效或已过期'
-        else if (response.status === 429) errorMessage = '请求过于频繁，请稍后重试'
-        else if (response.status === 500) errorMessage = '服务器内部错误，请稍后重试'
-        else if (response.status === 503) errorMessage = '服务暂不可用，请稍后重试'
+      if (!response.ok) {
+        let errorMessage = `请求失败: ${response.status}`
+        try {
+          const errorData = await response.json()
+          errorMessage = errorData.error?.message
+            || errorData.error?.code
+            || errorData.message
+            || `请求失败 (${response.status})`
+        } catch {
+          if (response.status === 401) errorMessage = 'API Key 无效或已过期'
+          else if (response.status === 429) errorMessage = '请求过于频繁，请稍后重试'
+          else if (response.status === 500) errorMessage = '服务器内部错误，请稍后重试'
+          else if (response.status === 503) errorMessage = '服务暂不可用，请稍后重试'
+        }
+        throw new Error(errorMessage)
       }
-      throw new Error(errorMessage)
-    }
 
-    const data = await response.json()
+      const data = await response.json()
 
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      throw new Error('API 返回数据格式异常，请检查模型是否兼容 OpenAI 格式')
-    }
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        throw new Error('API 返回数据格式异常，请检查模型是否兼容 OpenAI 格式')
+      }
 
-    return parseOptimizationResult(data.choices[0].message.content)
-  } catch (error) {
-    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
-      throw new Error('网络连接失败，请检查网络或 API 地址是否正确')
+      return parseOptimizationResult(data.choices[0].message.content)
+    } catch (error) {
+      handleNetworkError(error)
     }
-    if (error.message?.includes('CORS')) {
-      throw new Error('跨域请求被阻止，请确认 API 服务支持跨域访问')
-    }
-    throw error
   }
+
+  // Proxy mode
+  const response = await fetchWithTimeout('/api/proxy/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      modeId: iterationContext.modeId,
+      type: 'iteration',
+      currentPrompt: iterationContext.currentPrompt,
+      instruction: iterationContext.iterationInstruction,
+      originalPrompt: iterationContext.originalPrompt,
+      precondition: iterationContext.precondition,
+      diagnosis: iterationContext.diagnosis,
+      score: iterationContext.score
+    })
+  })
+
+  if (!response.ok) {
+    await handleProxyError(response)
+  }
+
+  const result = await response.json()
+  return parseProxyResponse(result.data)
 }
 
 /**
@@ -285,28 +359,34 @@ export async function optimizePromptStream (config, userPrompt, modeId = DEFAULT
     modeId = DEFAULT_PROMPT_MODE_ID
   }
 
-  const { baseURL, apiKey, model } = config
+  const useProxy = shouldUseProxy(config)
+  const { baseURL, apiKey, model } = config || {}
 
-  if (!baseURL || !apiKey || !model) {
-    throw new Error('API 配置不完整')
+  if (!useProxy) {
+    if (!baseURL || !apiKey || !model) {
+      throw new Error('API 配置不完整')
+    }
   }
 
-  const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
+  const url = useProxy ? '/api/proxy/chat/stream' : `${baseURL.replace(/\/$/, '')}/chat/completions`
+  const headers = useProxy
+    ? { 'Content-Type': 'application/json' }
+    : { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }
+  const body = useProxy
+    ? JSON.stringify({ modeId, userPrompt })
+    : JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: getSystemPrompt(modeId) },
+          { role: 'user', content: userPrompt }
+        ],
+        stream: true
+      })
 
   const response = await fetchWithTimeout(url, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { role: 'system', content: getSystemPrompt(modeId) },
-        { role: 'user', content: userPrompt }
-      ],
-      stream: true
-    })
+    headers,
+    body
   })
 
   if (!response.ok) {

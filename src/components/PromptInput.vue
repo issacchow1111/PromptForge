@@ -106,7 +106,7 @@
               >
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
-              优化提示词
+              {{ proxyAvailable && !hasConfig ? '使用服务端代理优化' : '优化提示词' }}
             </span>
           </button>
         </div>
@@ -120,6 +120,10 @@ import { ref, computed } from 'vue'
 
 const props = defineProps({
   hasConfig: {
+    type: Boolean,
+    default: false
+  },
+  proxyAvailable: {
     type: Boolean,
     default: false
   },
@@ -162,7 +166,7 @@ const currentMode = computed(() => {
 })
 
 const canOptimize = computed(() => {
-  return props.hasConfig && promptText.value.trim().length > 0 && !props.isLoading
+  return (props.hasConfig || props.proxyAvailable) && promptText.value.trim().length > 0 && !props.isLoading
 })
 
 function handleKeydown (e) {
