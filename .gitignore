@@ -5,7 +5,10 @@ nginx.conf
 Dockerfile
 docs
 .DS_Store
-server/.env
-server/node_modules
-server/dist
+server-dotnet/**/.env
+server-dotnet/**/appsettings.Development.json
+server-dotnet/**/*.user
+server-dotnet/**/.vs
+server-dotnet/**/bin
+server-dotnet/**/obj
 DEPLOY.md

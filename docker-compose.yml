@@ -3,13 +3,13 @@ version: '3.8'
 services:
   backend:
     build:
-      context: ./server
+      context: ./server-dotnet/PromptForge.Proxy
       dockerfile: Dockerfile
     container_name: promptforge-backend
     ports:
       - "3000:3000"
     env_file:
-      - ./server/.env
+      - ./server-dotnet/PromptForge.Proxy/.env
     restart: unless-stopped
 
   frontend:
