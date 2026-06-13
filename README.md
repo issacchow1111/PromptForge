@@ -189,19 +189,32 @@ dotnet run --no-launch-profile
 http://localhost:3000
 ```
 
-### Docker Compose 部署（含后端代理）
+### Docker Compose 部署（含前后端）
+
+Docker Compose 会同时启动前端 Nginx 和后端 .NET 代理：
 
 ```bash
 # 1. 复制并编辑后端配置
 cp server-dotnet/PromptForge.Proxy/.env.example server-dotnet/PromptForge.Proxy/.env
 # 编辑 .env，填入真实的 Proxy__BaseUrl、Proxy__ApiKey、Proxy__Model
 
-# 2. 构建并启动
+# 2. 构建前端静态产物
 npm run build
+
+# 3. 构建并启动前后端容器
 docker-compose up --build -d
 ```
 
-访问 `http://localhost:5173/prompt/`。
+启动后：
+
+- 前端：`http://localhost:5173/prompt/`
+- 后端代理：`http://localhost:3000`
+
+说明：
+
+- `npm run build` 生成 `dist/` 目录，前端镜像 `Dockerfile` 会把 `dist/` 复制到 Nginx 中
+- `nginx.conf` 配置前端监听 5173 端口，并把 `/api/` 转发给 `backend` 容器
+- 后端镜像基于 `server-dotnet/PromptForge.Proxy/Dockerfile`
 
 ---
 
@@ -545,19 +558,32 @@ Backend proxy URL:
 http://localhost:3000
 ```
 
-### Docker Compose Deployment (with Backend Proxy)
+### Docker Compose Deployment (with Front End and Backend)
+
+Docker Compose starts both the front-end Nginx and the back-end .NET proxy:
 
 ```bash
 # 1. Copy and edit backend configuration
 cp server-dotnet/PromptForge.Proxy/.env.example server-dotnet/PromptForge.Proxy/.env
 # Edit .env and fill in real Proxy__BaseUrl, Proxy__ApiKey, Proxy__Model
 
-# 2. Build and start
+# 2. Build the front-end static assets
 npm run build
+
+# 3. Build and start both containers
 docker-compose up --build -d
 ```
 
-Visit `http://localhost:5173/prompt/`.
+After startup:
+
+- Front end: `http://localhost:5173/prompt/`
+- Backend proxy: `http://localhost:3000`
+
+Notes:
+
+- `npm run build` generates the `dist/` directory; the front-end image `Dockerfile` copies `dist/` into Nginx
+- `nginx.conf` makes the front end listen on port 5173 and forwards `/api/` to the `backend` container
+- The back-end image is based on `server-dotnet/PromptForge.Proxy/Dockerfile`
 
 ---
 
