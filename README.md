@@ -4,12 +4,15 @@
 
 ### 将零散提示词，升级为可复用、可迭代、可追踪的专业工作流
 
-面向 Prompt Engineering、AI 应用设计与高频生产场景的浏览器端提示词优化工具。<br />
-提供结构化诊断、质量评分、版本迭代与本地持久化能力，兼容任意 OpenAI Chat Completions 风格接口。
+<p align="center">
+  <a href="#中文">中文</a> &nbsp;|&nbsp; <a href="#english">English</a>
+</p>
 
 </div>
 
 ---
+
+<a id="中文"></a>
 
 ## 产品定位
 
@@ -117,7 +120,7 @@ PromptForge 是一个轻量级 Prompt 工作台，而非一次性输入框。
 
 ### 纯前端、可静态部署
 
-项目不依赖自建后端服务，部署方式灵活：
+项目不依赖自建后端服务即可运行，部署方式灵活：
 
 - 本地开发使用 Vite
 - 生产环境可部署至 Nginx、Docker 或任意静态文件服务器
@@ -148,7 +151,8 @@ PromptForge 是一个轻量级 Prompt 工作台，而非一次性输入框。
 | 降级存储 | localStorage |
 | Markdown 渲染 | marked + DOMPurify |
 | 唯一 ID | uuid |
-| 部署形态 | 纯静态前端 + Node 后端代理，可配合 Nginx / Docker Compose |
+| 后端代理 | .NET 8 Web API |
+| 部署形态 | 纯静态前端 + .NET 后端代理，可配合 Nginx / Docker Compose |
 
 ---
 
@@ -158,8 +162,7 @@ PromptForge 是一个轻量级 Prompt 工作台，而非一次性输入框。
 git clone https://github.com/issacchow1111/PromptForge.git
 cd PromptForge
 npm install
-cd server && npm install && cd ..
-npm run dev:full
+npm run dev
 ```
 
 默认开发地址：
@@ -168,36 +171,30 @@ npm run dev:full
 http://localhost:5173
 ```
 
+### 启动后端代理（可选）
+
+```bash
+cd server-dotnet/PromptForge.Proxy
+ASPNETCORE_URLS=http://localhost:3000 \
+Proxy__BaseUrl=https://api.openai.com/v1 \
+Proxy__ApiKey=sk-xxxxxxxx \
+Proxy__Model=gpt-4o-mini \
+Cors__Origin=http://localhost:5173 \
+dotnet run --no-launch-profile
+```
+
 后端代理地址：
 
 ```
 http://localhost:3000
 ```
 
-仅启动前端：
-
-```bash
-npm run dev
-```
-
-仅启动后端：
-
-```bash
-npm run server:dev
-```
-
-生产构建：
-
-```bash
-npm run build
-```
-
 ### Docker Compose 部署（含后端代理）
 
 ```bash
 # 1. 复制并编辑后端配置
-cp server/.env.example server/.env
-# 编辑 server/.env，填入真实的 PROXY_BASE_URL、PROXY_API_KEY、PROXY_MODEL
+cp server-dotnet/PromptForge.Proxy/.env.example server-dotnet/PromptForge.Proxy/.env
+# 编辑 .env，填入真实的 Proxy__BaseUrl、Proxy__ApiKey、Proxy__Model
 
 # 2. 构建并启动
 npm run build
@@ -221,13 +218,14 @@ docker-compose up --build -d
 
 只要接口遵循 OpenAI Chat Completions 风格，即可接入。
 
-**API Key 是可选的。** 如果不填写 API Key，请求会自动通过后端代理转发。此时需要在 `server/.env` 中配置服务端的上游模型接口：
+**API Key 是可选的。** 如果不填写 API Key，请求会自动通过后端代理转发。此时需要在 `server-dotnet/PromptForge.Proxy/.env` 中配置服务端的上游模型接口：
 
 ```env
-PORT=3000
-PROXY_BASE_URL=https://api.openai.com/v1
-PROXY_API_KEY=sk-xxxxxxxx
-PROXY_MODEL=gpt-4o-mini
+ASPNETCORE_URLS=http://0.0.0.0:3000
+Proxy__BaseUrl=https://api.openai.com/v1
+Proxy__ApiKey=sk-xxxxxxxx
+Proxy__Model=gpt-4o-mini
+Cors__Origin=http://localhost:5173
 ```
 
 如果填写了完整的 API Key、Base URL 和模型名称，则前端会直接向该接口发送请求。
@@ -286,16 +284,17 @@ PromptForge/
 ├── Dockerfile
 ├── nginx.conf
 ├── docker-compose.yml
-├── server/                     # Node 后端代理
-│   ├── package.json
-│   ├── index.js
-│   ├── .env.example
-│   ├── routes/
-│   │   └── proxy.js
-│   └── middleware/
-│       ├── rateLimiter.js
-│       ├── requestValidator.js
-│       └── errorHandler.js
+├── server-dotnet/              # .NET 8 后端代理
+│   └── PromptForge.Proxy/
+│       ├── Program.cs
+│       ├── Dockerfile
+│       ├── PromptForge.Proxy.csproj
+│       ├── .env.example
+│       ├── Controllers/
+│       ├── Middleware/
+│       ├── Models/
+│       ├── PromptModes/
+│       └── Services/
 ├── src/
 │   ├── main.js                 # 应用初始化与本地数据迁移
 │   ├── App.vue                 # 主工作台：输入、结果、迭代、历史
@@ -303,7 +302,7 @@ PromptForge/
 │   ├── components/
 │   │   ├── PromptInput.vue     # 提示词输入与模式选择
 │   │   ├── ResultDisplay.vue   # 结果展示、编辑、继续迭代、版本记录
-│   │   ├── FloatMenu.vue       # API 配置与快速历史入口
+│   │   ├── FloatMenu.vue       # 模型配置与快速历史入口
 │   │   ├── HistoryDrawer.vue   # 历史记录侧边抽屉
 │   │   ├── HistoryModal.vue    # 历史记录详情与编辑
 │   │   ├── Modal.vue           # 通用输入弹窗
@@ -367,18 +366,356 @@ MIT License © issacchow1111
 
 ---
 
-## English Summary
+<a id="english"></a>
 
-PromptForge is a browser-based prompt optimization workbench built with Vue 3.
+# English
 
-It helps users turn rough prompts into structured, model-ready instructions through:
+## Product Positioning
 
-- mode-specific optimization strategies
-- structured diagnosis and scoring
-- iterative refinement on top of the current version
-- version history and local persistence
-- IndexedDB-based storage with localStorage fallback
-- history search and data import/export (storage layer ready)
-- compatibility with OpenAI Chat Completions style APIs
+PromptForge solves a practical problem in prompt engineering: raw prompts used for code generation, content production, data analysis, role-play, or structured output often lack background context, execution constraints, boundary conditions, acceptance criteria, and output formats. PromptForge makes these missing pieces explicit and rewrites the prompt into a more stable, executable version.
 
-It is designed for developers, AI product builders, content creators, and power users who want a private, deployable, front-end-first prompt workflow instead of a one-shot prompt beautifier.
+It is ideal when:
+
+- Your prompt works, but the output is unstable
+- The same task performs differently after switching models
+- Your team needs to accumulate, reuse, and replay prompt assets
+- You want to iterate from an existing version instead of rewriting from scratch every time
+
+---
+
+## Core Capabilities
+
+### 1. Structured Optimization
+
+Each optimization produces three layers of output:
+
+- **Diagnosis Report**: Identifies the main issues, semantic gaps, missing constraints, and potential misunderstandings in the original prompt
+- **Quality Score**: Quantitative evaluation across five dimensions: clarity, context completeness, constraint completeness, output controllability, and actionability
+- **Optimized Result**: A production-ready prompt that can be copied and used directly
+
+PromptForge shows not only *what was changed*, but also *why it was changed*.
+
+### 2. Seven Modes for Real-World Scenarios
+
+Built-in modes use different system-prompt strategies for common production scenarios:
+
+| Mode | Use Case |
+|------|----------|
+| General | Everyday task expression optimization |
+| Code Generation | Writing, modifying, or designing technical solutions |
+| Image Generation | Visual models such as Midjourney, Stable Diffusion, DALL-E |
+| Writing | Articles, scripts, marketing copy |
+| Data Analysis | Insights, reports, business analysis, SQL analysis |
+| Roleplay | Assistants, customer service, consultants, Agent personas |
+| Structured Output | JSON, Markdown, tables, fixed-field output |
+
+### 3. Continuous Iteration
+
+After optimization, you can keep refining the current version with instructions such as:
+
+- Make it stricter
+- Make it shorter
+- Add output format requirements
+- Adapt it for Claude
+- Rewrite it in English
+
+The system carries the current version, diagnosis, score, and precondition into the iteration context, generates a new version, and preserves the full version chain.
+
+### 4. Version Management
+
+Every saved record supports:
+
+- Custom naming, renaming, and deletion
+- Reloading, viewing details, and copying content
+- Reviewing the global precondition used for the task
+- Keeping iteration history and the currently active version
+
+PromptForge is a lightweight prompt workbench, not a one-shot input box.
+
+### 5. Local Persistence
+
+Data is stored locally in the browser. The current version uses IndexedDB as the primary storage with a localStorage fallback:
+
+- History remains after refreshing the page
+- Legacy localStorage data can be migrated automatically
+- The app falls back gracefully when IndexedDB is unavailable
+
+It can be used as a purely front-end, privately deployable prompt tool.
+
+---
+
+## Feature Overview
+
+| Capability | Description |
+|------------|-------------|
+| Structured Optimization | Outputs diagnosis, score, and optimized prompt body |
+| Dual-View Preview | Plain text and Markdown result views |
+| In-Place Editing | Edit the optimized result and write it back to the current version |
+| Continue Iterating | Optimize based on the current version while preserving the version chain |
+| Version Switching | Review and switch between different iteration versions |
+| Precondition | Set a global precondition that participates in optimization and iteration |
+| History Management | View, load, rename, delete, and copy saved records |
+| History Search | Search local history by title or content keyword (storage layer ready) |
+| Import / Export | Backup and restore all local data as JSON (storage layer ready) |
+| Local Persistence | IndexedDB primary storage with localStorage fallback |
+| Backend Proxy | Forward requests through a server-side proxy when no API Key is provided |
+| Model Compatibility | Compatible with OpenAI Chat Completions style APIs |
+
+---
+
+## Who It Is For
+
+- Power users who frequently use GPT, Claude, Gemini, or compatible models
+- Product managers and AI application designers who need to turn natural language requirements into high-quality prompts
+- Developers who want templated workflows for code generation, data analysis, content writing, and structured output
+- Teams that want to keep prompt assets local and reduce reliance on third-party SaaS tools
+
+---
+
+## Technical Highlights
+
+### Pure Front-End, Statically Deployable
+
+The project does not require a self-hosted backend service to run, offering flexible deployment options:
+
+- Local development with Vite
+- Production deployment on Nginx, Docker, or any static file server
+- Direct integration with any OpenAI Chat Completions compatible endpoint
+- Optional backend proxy via Docker Compose
+
+### Built for Engineering Workflows
+
+Compared with one-shot prompt beautifiers, PromptForge has the following engineering attributes:
+
+- Mode-specific system prompt design
+- Structured result parsing with fallback strategies
+- Iteration version chain preservation
+- Local database persistence
+- Legacy storage migration and graceful degradation
+- Search, import, and export capabilities already built into the storage layer
+- Backend proxy mode that keeps the API Key away from the front end
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Front-End Framework | Vue 3 Composition API |
+| Build Tool | Vite 5 |
+| Data Storage | Dexie + IndexedDB |
+| Fallback Storage | localStorage |
+| Markdown Rendering | marked + DOMPurify |
+| Unique IDs | uuid |
+| Backend Proxy | .NET 8 Web API |
+| Deployment | Static front end + .NET backend proxy, compatible with Nginx / Docker Compose |
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/issacchow1111/PromptForge.git
+cd PromptForge
+npm install
+npm run dev
+```
+
+Default development URL:
+
+```
+http://localhost:5173
+```
+
+### Start the Backend Proxy (Optional)
+
+```bash
+cd server-dotnet/PromptForge.Proxy
+ASPNETCORE_URLS=http://localhost:3000 \
+Proxy__BaseUrl=https://api.openai.com/v1 \
+Proxy__ApiKey=sk-xxxxxxxx \
+Proxy__Model=gpt-4o-mini \
+Cors__Origin=http://localhost:5173 \
+dotnet run --no-launch-profile
+```
+
+Backend proxy URL:
+
+```
+http://localhost:3000
+```
+
+### Docker Compose Deployment (with Backend Proxy)
+
+```bash
+# 1. Copy and edit backend configuration
+cp server-dotnet/PromptForge.Proxy/.env.example server-dotnet/PromptForge.Proxy/.env
+# Edit .env and fill in real Proxy__BaseUrl, Proxy__ApiKey, Proxy__Model
+
+# 2. Build and start
+npm run build
+docker-compose up --build -d
+```
+
+Visit `http://localhost:5173/prompt/`.
+
+---
+
+## How to Use
+
+### 1. Configure the Model Interface (Optional)
+
+Open the app and fill in the top-right menu:
+
+- Model provider
+- Model name
+- Base URL
+- API Key
+
+Any interface that follows the OpenAI Chat Completions style can be connected.
+
+**The API Key is optional.** If you do not provide an API Key, requests will be forwarded automatically through the backend proxy. In this case, configure the upstream model interface in `server-dotnet/PromptForge.Proxy/.env`:
+
+```env
+ASPNETCORE_URLS=http://0.0.0.0:3000
+Proxy__BaseUrl=https://api.openai.com/v1
+Proxy__ApiKey=sk-xxxxxxxx
+Proxy__Model=gpt-4o-mini
+Cors__Origin=http://localhost:5173
+```
+
+If you provide a complete API Key, Base URL, and model name, the front end will send requests directly to that interface.
+
+### 2. Select an Optimization Mode
+
+Choose the right mode for the task:
+
+- Writing code → Code Generation
+- Requiring JSON or tables → Structured Output
+- Doing analysis → Data Analysis
+
+### 3. Enter the Original Prompt
+
+You can paste a natural-language draft directly, and optionally attach a global precondition before optimization.
+
+### 4. Review the Result and Keep Iterating
+
+After optimization, you can:
+
+- Copy the result directly
+- Edit the current result
+- Continue iterating to generate the next version
+- Switch between versions in the version history
+- Save the result as a historical asset
+
+---
+
+## Typical Scenarios
+
+### Code Generation
+
+Turn "help me write a login page" into an engineering prompt that specifies the tech stack, file scope, input/output, boundary conditions, acceptance criteria, and prohibited changes.
+
+### Image Generation
+
+Turn "draw a cat" into a professional image description covering subject, style, camera angle, lighting, materials, and negative prompts.
+
+### Data Analysis
+
+Turn "help me analyze sales" into an analysis task description that defines time range, metric definitions, comparison baselines, chart suggestions, and conclusion structure.
+
+### Content Writing
+
+Turn "write a Xiaohongshu post" into an executable prompt covering target audience, tone, content structure, length constraints, and conversion goals.
+
+---
+
+## Project Structure
+
+```text
+PromptForge/
+├── index.html
+├── package.json
+├── vite.config.js
+├── Dockerfile
+├── nginx.conf
+├── docker-compose.yml
+├── server-dotnet/              # .NET 8 backend proxy
+│   └── PromptForge.Proxy/
+│       ├── Program.cs
+│       ├── Dockerfile
+│       ├── PromptForge.Proxy.csproj
+│       ├── .env.example
+│       ├── Controllers/
+│       ├── Middleware/
+│       ├── Models/
+│       ├── PromptModes/
+│       └── Services/
+├── src/
+│   ├── main.js                 # App initialization and local data migration
+│   ├── App.vue                 # Main workbench: input, result, iteration, history
+│   ├── style.css               # Global visual styles
+│   ├── components/
+│   │   ├── PromptInput.vue     # Prompt input and mode selection
+│   │   ├── ResultDisplay.vue   # Result display, editing, iteration, version records
+│   │   ├── FloatMenu.vue       # Model config and quick history entry
+│   │   ├── HistoryDrawer.vue   # History side drawer
+│   │   ├── HistoryModal.vue    # History details and editing
+│   │   ├── Modal.vue           # Generic input modal
+│   │   ├── Toast.vue           # Status toast
+│   │   └── PreconditionModal.vue  # Global precondition editor
+│   └── utils/
+│       ├── api.js              # Optimization/iteration requests, parsing, proxy switching
+│       ├── promptModes.js      # System prompt definitions for the 7 modes
+│       ├── storage.js          # Local data access layer (search, import/export)
+│       ├── db.js               # Dexie / IndexedDB definitions
+│       ├── migrate.js          # localStorage -> IndexedDB migration
+│       └── clipboard.js        # Clipboard write with fallback
+└── docs/
+```
+
+---
+
+## What Makes PromptForge Different
+
+The essential differences between PromptForge and ordinary prompt optimization tools:
+
+- **Mode-Based Strategy**: Different scenarios use different system-prompt strategies, not a single template
+- **Structured Diagnosis**: Outputs diagnosis and score, not just rewritten text
+- **Continuous Iteration**: Optimizes on top of the current version instead of starting over
+- **Version Preservation**: Saves iteration history and active versions instead of throwing results away
+- **Local Persistence**: IndexedDB storage and migration logic instead of a refresh-and-lose demo
+- **Private Deployable**: Front-end-first architecture suitable for private deployment and customization
+
+---
+
+## Notes
+
+- This project does not provide model services itself; you need to configure a usable API endpoint
+- Compatibility is based on the OpenAI Chat Completions style request format; proprietary SDKs from individual vendors are not directly adapted
+- Historical data is stored locally in the browser by default; clearing site data will delete local records
+
+---
+
+## Roadmap
+
+The current version already has a complete core loop: input, optimize, diagnose, iterate, save, and review.
+
+Capabilities already built into the code and awaiting UI integration:
+
+- History search and filtering (`storage.searchHistory`)
+- Data import / export (`storage.exportData` / `storage.importData`)
+- Streaming optimization output (`api.optimizePromptStream`)
+
+Future expansion directions:
+
+- Surface the above storage-layer capabilities in the UI
+- Custom mode templates
+- Team sharing and cloud sync
+- Richer result comparison views
+
+---
+
+## License
+
+MIT License © issacchow1111
