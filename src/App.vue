@@ -445,10 +445,6 @@ onMounted(async () => {
   } catch (e) {
     proxyAvailable.value = false
   }
-
-  if (floatMenuRef.value) {
-    floatMenuRef.value.checkShouldShow()
-  }
 })
 
 watch(selectedMode, async (modeId) => {
