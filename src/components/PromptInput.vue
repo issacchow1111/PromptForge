@@ -106,7 +106,7 @@
               >
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
-              {{ proxyAvailable && !hasConfig ? '使用服务端代理优化' : '优化提示词' }}
+              开始优化
             </span>
           </button>
         </div>
