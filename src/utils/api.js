@@ -54,26 +54,42 @@ function extractJsonContent (content) {
   return fencedMatch ? fencedMatch[1].trim() : trimmed
 }
 
+function repairJson (text) {
+  // Fix missing opening quotes on keys:  key": → "key":
+  let fixed = text.replace(/([,\{\[])\s*([a-zA-Z_]\w*)\s*":/g, '$1"$2":')
+  // Fix leading missing quote on first key
+  fixed = fixed.replace(/^(\s*)([a-zA-Z_]\w*)\s*":/gm, '$1"$2":')
+  return fixed
+}
+
 export function parseOptimizationResult (content) {
   const rawContent = String(content || '')
   const jsonContent = extractJsonContent(rawContent)
 
-  try {
-    const parsed = JSON.parse(jsonContent)
-    if (!parsed || typeof parsed !== 'object' || typeof parsed.optimizedPrompt !== 'string') {
-      return createFallbackResult(rawContent)
-    }
+  const attempts = [
+    jsonContent,
+    repairJson(jsonContent)
+  ]
 
-    return {
-      diagnosis: parsed.diagnosis && typeof parsed.diagnosis === 'object' ? parsed.diagnosis : null,
-      score: parsed.score && typeof parsed.score === 'object' ? parsed.score : null,
-      optimizedPrompt: parsed.optimizedPrompt,
-      rawContent,
-      structured: true
+  for (const text of attempts) {
+    try {
+      const parsed = JSON.parse(text)
+      if (!parsed || typeof parsed !== 'object' || typeof parsed.optimizedPrompt !== 'string') {
+        continue
+      }
+      return {
+        diagnosis: parsed.diagnosis && typeof parsed.diagnosis === 'object' ? parsed.diagnosis : null,
+        score: parsed.score && typeof parsed.score === 'object' ? parsed.score : null,
+        optimizedPrompt: parsed.optimizedPrompt,
+        rawContent,
+        structured: true
+      }
+    } catch {
+      // try next repair
     }
-  } catch {
-    return createFallbackResult(rawContent)
   }
+
+  return createFallbackResult(rawContent)
 }
 
 export function hasCompleteOptimizationReport (result) {
@@ -452,7 +468,11 @@ async function streamFromResponse (response, onChunk) {
   try {
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done) {
+        // Flush remaining bytes in the decoder buffer
+        fullContent += decoder.decode()
+        break
+      }
 
       const chunk = decoder.decode(value, { stream: true })
       const lines = chunk.split('\n')
@@ -538,7 +558,11 @@ export async function optimizePromptStream (config, userPrompt, modeId = DEFAULT
   try {
     while (true) {
       const { done, value } = await reader.read()
-      if (done) break
+      if (done) {
+        // Flush remaining bytes in the decoder buffer
+        fullContent += decoder.decode()
+        break
+      }
 
       const chunk = decoder.decode(value, { stream: true })
       const lines = chunk.split('\n')
