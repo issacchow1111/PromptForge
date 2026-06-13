@@ -1,5 +1,5 @@
 import express from 'express'
-import { getSystemPrompt } from '../../src/utils/promptModes.js'
+import { getSystemPrompt } from '../utils/promptModes.js'
 
 const router = express.Router()
 

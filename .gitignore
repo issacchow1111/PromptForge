@@ -8,3 +8,4 @@ docs
 server/.env
 server/node_modules
 server/dist
+DEPLOY.md
