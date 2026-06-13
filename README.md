@@ -99,6 +99,7 @@ PromptForge 是一个轻量级 Prompt 工作台，而非一次性输入框。
 | 历史搜索 | 按名称或内容关键词搜索本地历史（已接入存储层） |
 | 导入导出 | 备份 / 恢复全部本地数据为 JSON（已接入存储层） |
 | 本地持久化 | IndexedDB 主存储，localStorage 降级 |
+| 后端代理 | 未填 API Key 时通过服务端代理转发请求 |
 | 模型兼容 | 兼容 OpenAI Chat Completions 风格接口 |
 
 ---
@@ -121,6 +122,7 @@ PromptForge 是一个轻量级 Prompt 工作台，而非一次性输入框。
 - 本地开发使用 Vite
 - 生产环境可部署至 Nginx、Docker 或任意静态文件服务器
 - 只要目标接口兼容 OpenAI Chat Completions 格式，即可直接接入
+- 如需使用后端代理，可配合 Docker Compose 一键启动前后端
 
 ### 面向工程化使用
 
@@ -132,6 +134,7 @@ PromptForge 是一个轻量级 Prompt 工作台，而非一次性输入框。
 - 本地数据库持久化
 - 旧存储迁移与降级容错
 - 搜索、导入导出等本地数据能力已沉淀在存储层
+- 后端代理模式，Key 不暴露给前端
 
 ---
 
@@ -145,7 +148,7 @@ PromptForge 是一个轻量级 Prompt 工作台，而非一次性输入框。
 | 降级存储 | localStorage |
 | Markdown 渲染 | marked + DOMPurify |
 | 唯一 ID | uuid |
-| 部署形态 | 纯静态前端，可配合 Nginx / Docker |
+| 部署形态 | 纯静态前端 + Node 后端代理，可配合 Nginx / Docker Compose |
 
 ---
 
@@ -155,7 +158,8 @@ PromptForge 是一个轻量级 Prompt 工作台，而非一次性输入框。
 git clone https://github.com/issacchow1111/PromptForge.git
 cd PromptForge
 npm install
-npm run dev
+cd server && npm install && cd ..
+npm run dev:full
 ```
 
 默认开发地址：
@@ -164,17 +168,49 @@ npm run dev
 http://localhost:5173
 ```
 
+后端代理地址：
+
+```
+http://localhost:3000
+```
+
+仅启动前端：
+
+```bash
+npm run dev
+```
+
+仅启动后端：
+
+```bash
+npm run server:dev
+```
+
 生产构建：
 
 ```bash
 npm run build
 ```
 
+### Docker Compose 部署（含后端代理）
+
+```bash
+# 1. 复制并编辑后端配置
+cp server/.env.example server/.env
+# 编辑 server/.env，填入真实的 PROXY_BASE_URL、PROXY_API_KEY、PROXY_MODEL
+
+# 2. 构建并启动
+npm run build
+docker-compose up --build -d
+```
+
+访问 `http://localhost:5173/prompt/`。
+
 ---
 
 ## 使用方式
 
-### 1. 配置模型接口
+### 1. 配置模型接口（可选）
 
 打开页面后，在右上角菜单填写：
 
@@ -184,6 +220,17 @@ npm run build
 - API Key
 
 只要接口遵循 OpenAI Chat Completions 风格，即可接入。
+
+**API Key 是可选的。** 如果不填写 API Key，请求会自动通过后端代理转发。此时需要在 `server/.env` 中配置服务端的上游模型接口：
+
+```env
+PORT=3000
+PROXY_BASE_URL=https://api.openai.com/v1
+PROXY_API_KEY=sk-xxxxxxxx
+PROXY_MODEL=gpt-4o-mini
+```
+
+如果填写了完整的 API Key、Base URL 和模型名称，则前端会直接向该接口发送请求。
 
 ### 2. 选择优化模式
 
@@ -238,6 +285,17 @@ PromptForge/
 ├── vite.config.js
 ├── Dockerfile
 ├── nginx.conf
+├── docker-compose.yml
+├── server/                     # Node 后端代理
+│   ├── package.json
+│   ├── index.js
+│   ├── .env.example
+│   ├── routes/
+│   │   └── proxy.js
+│   └── middleware/
+│       ├── rateLimiter.js
+│       ├── requestValidator.js
+│       └── errorHandler.js
 ├── src/
 │   ├── main.js                 # 应用初始化与本地数据迁移
 │   ├── App.vue                 # 主工作台：输入、结果、迭代、历史
@@ -252,7 +310,7 @@ PromptForge/
 │   │   ├── Toast.vue           # 状态提示
 │   │   └── PreconditionModal.vue  # 全局前置条件编辑
 │   └── utils/
-│       ├── api.js              # 优化与迭代请求封装、结果解析
+│       ├── api.js              # 优化与迭代请求封装、结果解析、代理切换
 │       ├── promptModes.js      # 7 种模式的系统提示词定义
 │       ├── storage.js          # 本地数据访问层（含搜索、导入导出）
 │       ├── db.js               # Dexie / IndexedDB 定义
