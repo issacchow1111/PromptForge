@@ -226,6 +226,10 @@ const hasUserKey = computed(() => {
   return !!localConfig.value.apiKey
 })
 
+const hasDirectConfig = computed(() => {
+  return !!(localConfig.value.apiKey && localConfig.value.baseURL && localConfig.value.model)
+})
+
 watch(() => props.config, (newConfig) => {
   if (newConfig) {
     localConfig.value = { ...newConfig }
@@ -234,7 +238,7 @@ watch(() => props.config, (newConfig) => {
   }
 }, { immediate: true, deep: true })
 
-watch(hasConfig, (valid) => {
+watch(hasDirectConfig, (valid) => {
   if (valid && isOpen.value) {
     isOpen.value = false
   }
