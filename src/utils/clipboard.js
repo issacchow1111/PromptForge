@@ -19,10 +19,11 @@ export async function copyToClipboard(text) {
   // 降级方案：使用 execCommand
   const textarea = document.createElement('textarea')
   textarea.value = text
-  textarea.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;'
+  textarea.readOnly = true
+  textarea.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none;'
   document.body.appendChild(textarea)
-  textarea.focus()
   textarea.select()
+  textarea.setSelectionRange(0, text.length)
 
   try {
     const success = document.execCommand('copy')
