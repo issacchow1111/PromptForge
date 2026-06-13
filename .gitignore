@@ -12,3 +12,4 @@ server-dotnet/**/.vs
 server-dotnet/**/bin
 server-dotnet/**/obj
 DEPLOY.md
+.claude
