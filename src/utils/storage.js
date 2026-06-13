@@ -13,13 +13,19 @@ db.open().catch(e => {
 
 // ========== 配置 ==========
 export async function getConfig () {
-  if (!idbAvailable) {
+  // Try IndexedDB first
+  if (idbAvailable) {
+    try {
+      const record = await db.config.get('main')
+      if (record?.value) return record.value
+    } catch (e) {
+      console.warn('getConfig from IndexedDB failed, trying localStorage:', e)
+    }
+  }
+  // Fall back to localStorage
+  try {
     const data = localStorage.getItem('prompt_optimizer_config')
     return data ? JSON.parse(data) : null
-  }
-  try {
-    const record = await db.config.get('main')
-    return record?.value || null
   } catch (e) {
     console.error('getConfig failed:', e)
     return null
@@ -27,30 +33,27 @@ export async function getConfig () {
 }
 
 export async function saveConfig (config) {
-  if (!idbAvailable) {
+  // Always write to localStorage as safety net
+  try {
     localStorage.setItem('prompt_optimizer_config', JSON.stringify(config))
-    return true
+  } catch (e) {
+    console.warn('localStorage 写入配置失败:', e)
   }
+  if (!idbAvailable) return
   try {
     await db.config.put({ key: 'main', value: config })
-    return true
   } catch (e) {
-    console.error('saveConfig failed:', e)
-    return false
+    console.warn('IndexedDB 写入配置失败，已通过 localStorage 保存:', e)
   }
 }
 
 export async function clearConfig () {
-  if (!idbAvailable) {
-    localStorage.removeItem('prompt_optimizer_config')
-    return true
-  }
+  localStorage.removeItem('prompt_optimizer_config')
+  if (!idbAvailable) return
   try {
     await db.config.delete('main')
-    return true
   } catch (e) {
-    console.error('clearConfig failed:', e)
-    return false
+    console.warn('IndexedDB 清除配置失败:', e)
   }
 }
 

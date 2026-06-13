@@ -321,6 +321,9 @@
       @cancel="preconditionModalOpen = false"
     />
 
+    <!-- Thinking Overlay -->
+    <ThinkingOverlay :show="isThinking" :streaming-text="streamingText" @stop="handleStopThinking" />
+
     <!-- Footer -->
     <footer class="site-footer">
       <div class="footer-inner">
@@ -374,8 +377,10 @@ import Modal from './components/Modal.vue'
 import Toast from './components/Toast.vue'
 import HistoryModal from './components/HistoryModal.vue'
 import PreconditionModal from './components/PreconditionModal.vue'
+import ThinkingOverlay from './components/ThinkingOverlay.vue'
 import { getConfig, saveConfig, clearConfig, getSelectedMode, saveSelectedMode, getHistory, addToHistory, updateHistoryItem, deleteFromHistory, getPrecondition, savePrecondition, clearPrecondition } from './utils/storage.js'
-import { hasCompleteOptimizationReport, iteratePrompt, optimizePrompt } from './utils/api.js'
+import { hasCompleteOptimizationReport, streamOptimizeOrIterate, parseOptimizationResult } from './utils/api.js'
+import { extractOptimizedPrompt } from './utils/streamParser.js'
 import { copyToClipboard } from './utils/clipboard.js'
 import { DEFAULT_PROMPT_MODE_ID, PROMPT_MODES, getPromptMode } from './utils/promptModes.js'
 
@@ -391,6 +396,9 @@ const preconditionModalOpen = ref(false)
 const activePreconditionSnapshot = ref('')
 const isLoading = ref(false)
 const isIterating = ref(false)
+const isThinking = ref(false)
+const abortController = ref(null)
+const streamingText = ref('')
 const error = ref('')
 const promptModes = PROMPT_MODES
 const selectedMode = ref(DEFAULT_PROMPT_MODE_ID)
@@ -462,14 +470,16 @@ async function handleConfigUpdate (newConfig) {
   config.value = newConfig
   clearTimeout(configSaveTimer)
   configSaveTimer = setTimeout(async () => {
+    configSaveTimer = null
     try {
       await saveConfig(config.value)
-      showToast('配置已保存', 'success')
     } catch (e) {
       console.error('保存配置失败:', e)
       showToast('配置保存失败', 'error')
+      return
     }
-  }, 500)
+    showToast('配置已保存', 'success')
+  }, 100)
 }
 
 async function handleConfigClear () {
@@ -522,7 +532,11 @@ async function handleOptimize (prompt) {
     return
   }
 
+  const controller = new AbortController()
+  abortController.value = controller
   isLoading.value = true
+  isThinking.value = true
+  streamingText.value = ''
   error.value = ''
   optimizedResult.value = ''
   optimizationResult.value = null
@@ -533,7 +547,21 @@ async function handleOptimize (prompt) {
   const preconditionSnapshot = precondition.value
 
   try {
-    const result = await optimizePrompt(config.value, prompt, selectedMode.value, preconditionSnapshot)
+    const rawContent = await streamOptimizeOrIterate(
+      config.value,
+      {
+        type: 'optimize',
+        modeId: selectedMode.value,
+        userPrompt: prompt,
+        precondition: preconditionSnapshot
+      },
+      (accumulatedText) => {
+        streamingText.value = extractOptimizedPrompt(accumulatedText)
+      },
+      controller.signal
+    )
+
+    const result = parseOptimizationResult(rawContent)
     const mode = getPromptMode(selectedMode.value)
     const version = createIterationVersion({
       type: 'initial',
@@ -553,11 +581,26 @@ async function handleOptimize (prompt) {
       resultDisplayRef.value.viewMode = 'markdown'
     }
   } catch (e) {
-    error.value = e.message
-    showToast(e.message, 'error')
+    if (e.name === 'AbortError' || controller.signal.aborted) {
+      error.value = ''
+    } else {
+      error.value = e.message
+      showToast(e.message, 'error')
+    }
   } finally {
+    isThinking.value = false
     isLoading.value = false
+    abortController.value = null
   }
+}
+
+// Stop thinking handler
+function handleStopThinking () {
+  if (abortController.value) {
+    abortController.value.abort()
+    abortController.value = null
+  }
+  streamingText.value = ''
 }
 
 // Clear prompt handler
@@ -595,19 +638,33 @@ async function handleIterate (instruction) {
     return
   }
 
+  const controller = new AbortController()
+  abortController.value = controller
   isIterating.value = true
+  isThinking.value = true
+  streamingText.value = ''
   error.value = ''
 
   try {
-    const result = await iteratePrompt(config.value, {
-      modeId: currentVersion.modeId || selectedMode.value,
-      originalPrompt: originalPrompt.value,
-      currentPrompt: currentVersion.optimizedPrompt,
-      instruction: normalizedInstruction,
-      diagnosis: currentVersion.diagnosis,
-      score: currentVersion.score,
-      precondition: activePreconditionSnapshot.value
-    })
+    const rawContent = await streamOptimizeOrIterate(
+      config.value,
+      {
+        type: 'iteration',
+        modeId: currentVersion.modeId || selectedMode.value,
+        currentPrompt: currentVersion.optimizedPrompt,
+        instruction: normalizedInstruction,
+        originalPrompt: originalPrompt.value,
+        precondition: activePreconditionSnapshot.value,
+        diagnosis: currentVersion.diagnosis,
+        score: currentVersion.score
+      },
+      (accumulatedText) => {
+        streamingText.value = extractOptimizedPrompt(accumulatedText)
+      },
+      controller.signal
+    )
+
+    const result = parseOptimizationResult(rawContent)
 
     if (!hasCompleteOptimizationReport(result)) {
       throw new Error('模型返回的迭代结果缺少诊断报告或评分，已保留当前版本')
@@ -627,9 +684,15 @@ async function handleIterate (instruction) {
     syncResultFromVersion(version)
     showToast('已生成新版本', 'success')
   } catch (e) {
-    showToast(e.message || '继续迭代失败，已保留当前版本', 'error')
+    if (e.name === 'AbortError' || controller.signal.aborted) {
+      // User-initiated stop, no error toast
+    } else {
+      showToast(e.message || '继续迭代失败，已保留当前版本', 'error')
+    }
   } finally {
+    isThinking.value = false
     isIterating.value = false
+    abortController.value = null
   }
 }
 

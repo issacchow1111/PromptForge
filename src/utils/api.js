@@ -116,6 +116,12 @@ function validateDirectConfig (config) {
 async function fetchWithTimeout (url, options = {}, timeout = REQUEST_TIMEOUT) {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeout)
+  const externalSignal = options.signal
+
+  // Combine timeout signal with external signal
+  if (externalSignal) {
+    externalSignal.addEventListener('abort', () => controller.abort())
+  }
 
   try {
     const response = await fetch(url, {
@@ -126,7 +132,7 @@ async function fetchWithTimeout (url, options = {}, timeout = REQUEST_TIMEOUT) {
     return response
   } catch (error) {
     clearTimeout(id)
-    if (error.name === 'AbortError') {
+    if (error.name === 'AbortError' && !externalSignal?.aborted) {
       throw new Error('请求超时，请检查网络或稍后重试')
     }
     throw error
@@ -169,7 +175,7 @@ async function handleProxyError (response) {
  * @param {string} precondition - 全局前置条件
  * @returns {Promise<Object>} 结构化优化结果
  */
-export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMPT_MODE_ID, precondition = '') {
+export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMPT_MODE_ID, precondition = '', signal = null) {
   const useProxy = shouldUseProxy(config)
 
   if (!useProxy) {
@@ -193,7 +199,8 @@ export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMP
             { role: 'system', content: getSystemPrompt(modeId) },
             { role: 'user', content: createPromptMessage(userPrompt, precondition) }
           ]
-        })
+        }),
+        signal
       })
 
       if (!response.ok) {
@@ -234,7 +241,8 @@ export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMP
       userPrompt,
       precondition,
       type: 'optimize'
-    })
+    }),
+    signal
   })
 
   if (!response.ok) {
@@ -251,7 +259,7 @@ export async function optimizePrompt (config, userPrompt, modeId = DEFAULT_PROMP
  * @param {Object} payload - 迭代上下文
  * @returns {Promise<Object>} 结构化优化结果
  */
-export async function iteratePrompt (config, payload) {
+export async function iteratePrompt (config, payload, signal = null) {
   const useProxy = shouldUseProxy(config)
 
   if (!useProxy) {
@@ -289,7 +297,8 @@ export async function iteratePrompt (config, payload) {
             { role: 'system', content: ITERATION_SYSTEM_PROMPT },
             { role: 'user', content: JSON.stringify(iterationContext, null, 2) }
           ]
-        })
+        }),
+        signal
       })
 
       if (!response.ok) {
@@ -334,7 +343,8 @@ export async function iteratePrompt (config, payload) {
       precondition: iterationContext.precondition,
       diagnosis: iterationContext.diagnosis,
       score: iterationContext.score
-    })
+    }),
+    signal
   })
 
   if (!response.ok) {
@@ -343,6 +353,133 @@ export async function iteratePrompt (config, payload) {
 
   const result = await response.json()
   return parseProxyResponse(result.data)
+}
+
+/**
+ * 统一的流式调用（支持 optimize 和 iteration）
+ * @param {Object} config - API 配置
+ * @param {Object} payload - { type, modeId, userPrompt, precondition, currentPrompt, instruction, originalPrompt, diagnosis, score }
+ * @param {Function} onChunk - 回调 (accumulatedText)，每次收到新 chunk 时调用
+ * @param {AbortSignal} [signal] - 外部中断信号
+ * @returns {Promise<string>} 完整的原始响应文本
+ */
+export async function streamOptimizeOrIterate (config, payload, onChunk, signal = null) {
+  const useProxy = shouldUseProxy(config)
+  const isIteration = payload.type === 'iteration'
+
+  if (!useProxy) {
+    const { baseURL, apiKey, model } = config || {}
+    if (!baseURL || !apiKey || !model) {
+      throw new Error('API 配置不完整')
+    }
+
+    const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
+    const messages = isIteration
+      ? [
+          { role: 'system', content: ITERATION_SYSTEM_PROMPT },
+          { role: 'user', content: JSON.stringify({
+              modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+              originalPrompt: payload.originalPrompt || '',
+              precondition: payload.precondition || '',
+              currentPrompt: payload.currentPrompt,
+              iterationInstruction: payload.instruction,
+              diagnosis: payload.diagnosis || null,
+              score: payload.score || null
+            }, null, 2) }
+        ]
+      : [
+          { role: 'system', content: getSystemPrompt(payload.modeId || DEFAULT_PROMPT_MODE_ID) },
+          { role: 'user', content: createPromptMessage(payload.userPrompt, payload.precondition) }
+        ]
+
+    return streamFromResponse(
+      await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({ model, messages, stream: true }),
+        signal
+      }),
+      onChunk
+    )
+  }
+
+  // Proxy mode
+  const body = isIteration
+    ? JSON.stringify({
+        modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+        type: 'iteration',
+        currentPrompt: payload.currentPrompt,
+        instruction: payload.instruction,
+        originalPrompt: payload.originalPrompt || '',
+        precondition: payload.precondition || '',
+        diagnosis: payload.diagnosis || null,
+        score: payload.score || null
+      })
+    : JSON.stringify({
+        modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+        userPrompt: payload.userPrompt,
+        precondition: payload.precondition || '',
+        type: 'optimize'
+      })
+
+  return streamFromResponse(
+    await fetchWithTimeout('/api/proxy/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal
+    }),
+    onChunk
+  )
+}
+
+/**
+ * Parse SSE stream from a Response object
+ */
+async function streamFromResponse (response, onChunk) {
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}))
+    throw new Error(errorData.error?.message || `请求失败: ${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let fullContent = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value, { stream: true })
+      const lines = chunk.split('\n')
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6)
+          if (data === '[DONE]') continue
+
+          try {
+            const parsed = JSON.parse(data)
+            const content = parsed.choices?.[0]?.delta?.content
+            if (content) {
+              fullContent += content
+              onChunk?.(fullContent)
+            }
+          } catch {
+            // ignore parse failures
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return fullContent
 }
 
 /**
