@@ -6,19 +6,19 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "server:dev": "cd server && npm run dev",
+    "server:dev": "cd server-dotnet/PromptForge.Proxy && ASPNETCORE_URLS=http://localhost:3000 dotnet run --no-launch-profile",
     "dev:full": "concurrently \"npm run dev\" \"npm run server:dev\""
   },
   "dependencies": {
     "dexie": "^4.4.3",
     "dompurify": "^3.0.9",
     "marked": "^12.0.1",
-    "uuid": "^9.0.1",
+    "uuid": "^14.0.0",
     "vue": "^3.4.21"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.0.4",
+    "@vitejs/plugin-vue": "^6.0.7",
     "concurrently": "^8.2.2",
-    "vite": "^5.2.0"
+    "vite": "^8.0.16"
   }
 }

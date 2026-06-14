@@ -1,5 +1,5 @@
 <template>
-  <div class="modal-overlay" @click.self="emit('cancel')">
+  <div class="modal-overlay" @click.self="handleCancel">
     <div class="modal-content">
       <h3 class="modal-title">{{ title }}</h3>
       <input
@@ -7,15 +7,16 @@
         v-model="inputValue"
         class="modal-input"
         :placeholder="placeholder"
+        :disabled="pending"
         @keyup.enter="handleConfirm"
-        @keyup.escape="emit('cancel')"
+        @keyup.escape="handleCancel"
       />
       <div class="modal-actions">
-        <button class="btn btn-ghost" @click="emit('cancel')">
+        <button class="btn btn-ghost" :disabled="pending" @click="handleCancel">
           取消
         </button>
-        <button class="btn btn-primary" @click="handleConfirm">
-          确定
+        <button class="btn btn-primary" :disabled="pending" @click="handleConfirm">
+          {{ pending ? "处理中..." : "确定" }}
         </button>
       </div>
     </div>
@@ -28,7 +29,8 @@ import { ref, watch, nextTick } from 'vue'
 const props = defineProps({
   title: { type: String, default: '' },
   value: { type: String, default: '' },
-  placeholder: { type: String, default: '' }
+  placeholder: { type: String, default: '' },
+  pending: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['confirm', 'cancel'])
@@ -49,7 +51,13 @@ watch(inputRef, async (el) => {
 })
 
 function handleConfirm() {
+  if (props.pending) return
   emit('confirm', inputValue.value)
+}
+
+function handleCancel() {
+  if (props.pending) return
+  emit('cancel')
 }
 </script>
 

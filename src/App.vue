@@ -47,7 +47,7 @@
     <section id="workspace" class="workspace">
       <PromptInput
         ref="promptInputRef"
-        :has-config="!!config"
+        :has-config="hasDirectConfig"
         :proxy-available="proxyAvailable"
         :is-loading="isLoading"
         :modes="promptModes"
@@ -81,7 +81,8 @@
     <FloatMenu
       ref="floatMenuRef"
       :config="config"
-      :proxy-available="proxyAvailable"
+      :proxy-reachable="proxyReachable"
+      :proxy-configured="proxyConfigured"
       :history="history"
       @update:config="handleConfigUpdate"
       @clear="handleConfigClear"
@@ -318,8 +319,9 @@
       :title="modalTitle"
       :value="modalValue"
       :placeholder="modalPlaceholder"
+      :pending="modalPending"
       @confirm="handleModalConfirm"
-      @cancel="showModal = false"
+      @cancel="handleModalCancel"
     />
 
     <!-- Toast -->
@@ -393,7 +395,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import PromptInput from './components/PromptInput.vue'
 import ResultDisplay from './components/ResultDisplay.vue'
@@ -433,7 +435,10 @@ const floatMenuRef = ref(null)
 const historyOpen = ref(false)
 const historySearchKeyword = ref('')
 const filteredHistory = ref([])
-const proxyAvailable = ref(false)
+const proxyReachable = ref(false)
+const proxyConfigured = ref(false)
+const proxyAvailable = computed(() => proxyReachable.value && proxyConfigured.value)
+const hasDirectConfig = computed(() => Boolean(config.value?.apiKey && config.value?.baseURL && config.value?.model))
 
 // Initialize filtered history whenever history changes
 watch(history, (newHistory) => {
@@ -442,7 +447,11 @@ watch(history, (newHistory) => {
 
 // Search history when keyword changes
 watch(historySearchKeyword, async (keyword) => {
-  filteredHistory.value = await searchHistory(keyword)
+  const searchId = ++historySearchId
+  const results = await searchHistory(keyword)
+  if (searchId === historySearchId) {
+    filteredHistory.value = results
+  }
 })
 
 // Modal state
@@ -450,7 +459,9 @@ const showModal = ref(false)
 const modalTitle = ref('')
 const modalValue = ref('')
 const modalPlaceholder = ref('')
+const modalPending = ref(false)
 let modalCallback = null
+let historySearchId = 0
 
 // Toast state
 const toast = ref({ show: false, message: '', type: 'info' })
@@ -485,11 +496,12 @@ onMounted(async () => {
     const res = await fetch('/api/health')
     if (res.ok) {
       const data = await res.json()
-      // 后端服务只要响应成功就认为代理可用；上游 API 是否配置由后端请求时返回错误
-      proxyAvailable.value = data.success === true
+      proxyReachable.value = data.success === true
+      proxyConfigured.value = data.proxyConfigured === true
     }
   } catch (e) {
-    proxyAvailable.value = false
+    proxyReachable.value = false
+    proxyConfigured.value = false
   }
 })
 
@@ -517,7 +529,7 @@ async function handleConfigUpdate (newConfig) {
       return
     }
     showToast('配置已保存', 'success')
-  }, 100)
+  }, 500)
 }
 
 async function handleConfigClear () {
@@ -557,12 +569,9 @@ async function handlePreconditionClear () {
 
 // Optimize handler
 async function handleOptimize (prompt) {
-  const hasDirectConfig = config.value?.apiKey && config.value?.baseURL && config.value?.model
-  if (!hasDirectConfig && !proxyAvailable.value) {
-    showToast('请先配置 API 信息', 'error')
-    if (floatMenuRef.value) {
-      floatMenuRef.value.isOpen = true
-    }
+  if (!hasDirectConfig.value && !proxyAvailable.value) {
+    showToast(getMissingApiConfigMessage(), 'error')
+    floatMenuRef.value?.openConfig?.()
     return
   }
   if (!prompt.trim()) {
@@ -615,6 +624,9 @@ async function handleOptimize (prompt) {
     iterationHistory.value = [version]
     activeIterationId.value = version.id
     syncResultFromVersion(version)
+    if (!hasCompleteOptimizationReport(result)) {
+      showToast('模型返回内容未包含完整诊断/评分，已仅展示优化结果', 'info')
+    }
     if (resultDisplayRef.value) {
       resultDisplayRef.value.viewMode = 'markdown'
     }
@@ -668,13 +680,10 @@ function handleClearPrompt () {
 async function handleIterate (instruction) {
   const currentVersion = getActiveIteration()
   const normalizedInstruction = String(instruction || '').trim()
-  const hasDirectConfig = config.value?.apiKey && config.value?.baseURL && config.value?.model
 
-  if (!hasDirectConfig && !proxyAvailable.value) {
-    showToast('请先配置 API 信息', 'error')
-    if (floatMenuRef.value) {
-      floatMenuRef.value.isOpen = true
-    }
+  if (!hasDirectConfig.value && !proxyAvailable.value) {
+    showToast(getMissingApiConfigMessage(), 'error')
+    floatMenuRef.value?.openConfig?.()
     return
   }
   if (!currentVersion || !currentVersion.optimizedPrompt) {
@@ -782,7 +791,10 @@ function handleSave () {
       activeIterationId: saveVersion?.id || activeIterationId.value,
       createdAt: new Date().toISOString()
     }
-    await addToHistory(item)
+    const saved = await addToHistory(item)
+    if (!saved) {
+      throw new Error('保存历史记录失败，请检查浏览器存储空间')
+    }
     history.value = await getHistory()
     historyOpen.value = true
     showToast('已保存到历史记录', 'success')
@@ -885,7 +897,7 @@ function handleOpenHistoryItem (item) {
 async function handleExport () {
   try {
     await exportData()
-    showToast('备份已导出', 'success')
+    showToast('备份已导出，未包含 API Key', 'success')
   } catch (e) {
     console.error('导出失败:', e)
     showToast('导出失败，请重试', 'error')
@@ -1002,6 +1014,7 @@ function createIterationVersion ({ type, instruction, modeId, modeName, result, 
     scoreStale: false,
     optimizedPrompt: result.optimizedPrompt || '',
     rawContent: result.rawContent || result.optimizedPrompt || '',
+    structured: result.structured !== false,
     createdAt: new Date().toISOString()
   }
 }
@@ -1022,6 +1035,7 @@ function normalizeIterationHistory (item) {
       scoreStale: Boolean(version.scoreStale),
       optimizedPrompt: version.optimizedPrompt || version.content || item.content || '',
       rawContent: version.rawContent || version.rawResult || version.optimizedPrompt || version.content || item.content || '',
+      structured: version.structured !== false && Boolean(version.diagnosis && version.score),
       createdAt: version.createdAt || item.createdAt || new Date().toISOString()
     }))
   }
@@ -1040,6 +1054,7 @@ function normalizeIterationHistory (item) {
     scoreStale: Boolean(item.scoreStale),
     optimizedPrompt: item.content || '',
     rawContent: item.rawResult || item.content || '',
+    structured: Boolean(item.diagnosis && item.score),
     createdAt: item.createdAt || new Date().toISOString()
   }]
 }
@@ -1074,22 +1089,39 @@ function syncResultFromVersion (version) {
     diagnosisStale: Boolean(version.diagnosisStale),
     scoreStale: Boolean(version.scoreStale),
     optimizedPrompt: version.optimizedPrompt || '',
-    rawContent: version.rawContent || version.optimizedPrompt || ''
+    rawContent: version.rawContent || version.optimizedPrompt || '',
+    structured: version.structured !== false
   }
 }
 
 // Modal confirm
 async function handleModalConfirm (value) {
+  if (modalPending.value) return
   if (modalCallback && value.trim()) {
+    modalPending.value = true
     try {
       await modalCallback(value.trim())
     } catch (e) {
       console.error('Modal callback failed:', e)
       showToast('操作失败: ' + (e.message || '未知错误'), 'error')
       return
+    } finally {
+      modalPending.value = false
     }
   }
   showModal.value = false
+}
+
+function handleModalCancel () {
+  if (modalPending.value) return
+  showModal.value = false
+}
+
+function getMissingApiConfigMessage () {
+  if (proxyReachable.value && !proxyConfigured.value) {
+    return '服务端代理未配置，请填写 API Key 或配置代理服务'
+  }
+  return '请先配置 API 信息'
 }
 
 // Toast helper

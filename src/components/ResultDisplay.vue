@@ -70,6 +70,10 @@
       <!-- Display Mode -->
       <template v-else>
         <template v-if="result || error">
+          <div v-if="result && isReportIncomplete" class="report-stale-notice">
+            模型返回内容未包含完整诊断或评分，当前仅展示优化结果；继续迭代前建议重试或调整模型。
+          </div>
+
           <div v-if="result && hasReport" class="result-panel-tabs">
             <button
               class="tab-btn"
@@ -416,6 +420,19 @@ const scoreStale = computed(() => Boolean(props.optimizationResult?.scoreStale))
 const isReportStale = computed(() => diagnosisStale.value || scoreStale.value)
 
 const hasReport = computed(() => Boolean(diagnosis.value || score.value))
+const isReportIncomplete = computed(() => {
+  return Boolean(
+    props.result &&
+    props.optimizationResult &&
+    (
+      props.optimizationResult.structured === false ||
+      !diagnosis.value ||
+      !score.value ||
+      typeof score.value.overall === 'undefined' ||
+      !score.value.dimensions
+    )
+  )
+})
 
 const activeVersion = computed(() => {
   return props.iterationHistory.find(version => version.id === props.activeIterationId) || null

@@ -31,7 +31,7 @@ export function extractOptimizedPrompt (accumulatedText) {
     .replace(/\\n/g, '\n')              // \n → newline
     .replace(/\\t/g, '\t')              // \t → tab
     .replace(/\\r/g, '\r')              // \r → carriage return
-    .replace(/\\u[\da-fA-F]{4}/g, '')   // unicode escapes (removed)
+    .replace(/\\u([\da-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     .replace(/\x00/g, '\\')             // placeholder → \
 }
 

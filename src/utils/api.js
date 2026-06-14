@@ -444,76 +444,80 @@ export async function iteratePrompt (config, payload, signal = null) {
  * @returns {Promise<string>} 完整的原始响应文本
  */
 export async function streamOptimizeOrIterate (config, payload, onChunk, signal = null) {
-  const useProxy = shouldUseProxy(config)
-  const isIteration = payload.type === 'iteration'
+  try {
+    const useProxy = shouldUseProxy(config)
+    const isIteration = payload.type === 'iteration'
 
-  if (!useProxy) {
-    const { baseURL, apiKey, model } = config || {}
-    if (!baseURL || !apiKey || !model) {
-      throw new Error('API 配置不完整')
+    if (!useProxy) {
+      const { baseURL, apiKey, model } = config || {}
+      if (!baseURL || !apiKey || !model) {
+        throw new Error('API 配置不完整')
+      }
+
+      const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
+      const messages = isIteration
+        ? [
+            { role: 'system', content: ITERATION_SYSTEM_PROMPT },
+            { role: 'user', content: JSON.stringify({
+                modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+                originalPrompt: payload.originalPrompt || '',
+                precondition: payload.precondition || '',
+                currentPrompt: payload.currentPrompt,
+                iterationInstruction: payload.instruction,
+                diagnosis: payload.diagnosis || null,
+                score: payload.score || null
+              }, null, 2) }
+          ]
+        : [
+            { role: 'system', content: getSystemPrompt(payload.modeId || DEFAULT_PROMPT_MODE_ID) },
+            { role: 'user', content: createPromptMessage(payload.userPrompt, payload.precondition) }
+          ]
+
+      return streamFromResponse(
+        await fetchWithTimeout(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({ model, messages, stream: true }),
+          signal
+        }),
+        onChunk
+      )
     }
 
-    const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
-    const messages = isIteration
-      ? [
-          { role: 'system', content: ITERATION_SYSTEM_PROMPT },
-          { role: 'user', content: JSON.stringify({
-              modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
-              originalPrompt: payload.originalPrompt || '',
-              precondition: payload.precondition || '',
-              currentPrompt: payload.currentPrompt,
-              iterationInstruction: payload.instruction,
-              diagnosis: payload.diagnosis || null,
-              score: payload.score || null
-            }, null, 2) }
-        ]
-      : [
-          { role: 'system', content: getSystemPrompt(payload.modeId || DEFAULT_PROMPT_MODE_ID) },
-          { role: 'user', content: createPromptMessage(payload.userPrompt, payload.precondition) }
-        ]
+    // Proxy mode
+    const body = isIteration
+      ? JSON.stringify({
+          modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+          type: 'iteration',
+          currentPrompt: payload.currentPrompt,
+          instruction: payload.instruction,
+          originalPrompt: payload.originalPrompt || '',
+          precondition: payload.precondition || '',
+          diagnosis: payload.diagnosis || null,
+          score: payload.score || null
+        })
+      : JSON.stringify({
+          modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+          userPrompt: payload.userPrompt,
+          precondition: payload.precondition || '',
+          type: 'optimize'
+        })
 
     return streamFromResponse(
-      await fetchWithTimeout(url, {
+      await fetchWithTimeout('/api/proxy/chat/stream', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
-        body: JSON.stringify({ model, messages, stream: true }),
+        headers: { 'Content-Type': 'application/json' },
+        body,
         signal
       }),
       onChunk
     )
+  } catch (error) {
+    handleNetworkError(error)
   }
-
-  // Proxy mode
-  const body = isIteration
-    ? JSON.stringify({
-        modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
-        type: 'iteration',
-        currentPrompt: payload.currentPrompt,
-        instruction: payload.instruction,
-        originalPrompt: payload.originalPrompt || '',
-        precondition: payload.precondition || '',
-        diagnosis: payload.diagnosis || null,
-        score: payload.score || null
-      })
-    : JSON.stringify({
-        modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
-        userPrompt: payload.userPrompt,
-        precondition: payload.precondition || '',
-        type: 'optimize'
-      })
-
-  return streamFromResponse(
-    await fetchWithTimeout('/api/proxy/chat/stream', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      signal
-    }),
-    onChunk
-  )
 }
 
 /**
@@ -523,6 +527,10 @@ async function streamFromResponse (response, onChunk) {
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}))
     throw new Error(errorData.error?.message || `请求失败: ${response.status}`)
+  }
+
+  if (!response.body) {
+    throw new Error('模型未返回内容，请检查模型或稍后重试')
   }
 
   const reader = response.body.getReader()
@@ -555,23 +563,35 @@ async function streamFromResponse (response, onChunk) {
     reader.releaseLock()
   }
 
+  if (!fullContent.trim()) {
+    throw new Error('模型未返回内容，请检查模型或稍后重试')
+  }
+
   return fullContent
 
   function processSseLine (line) {
-    if (!line.startsWith('data: ')) return
+    const normalizedLine = line.trim()
+    if (!normalizedLine.startsWith('data: ')) return
 
-    const data = line.slice(6)
+    const data = normalizedLine.slice(6)
     if (data === '[DONE]') return
 
     try {
       const parsed = JSON.parse(data)
+      if (parsed.error) {
+        throw new Error(parsed.error.message || parsed.error.code || '模型流式返回错误')
+      }
       const content = parsed.choices?.[0]?.delta?.content
       if (content) {
         fullContent += content
         onChunk?.(fullContent)
       }
-    } catch {
-      // ignore parse failures
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        console.warn('忽略无法解析的 SSE 数据:', data)
+        return
+      }
+      throw e
     }
   }
 }

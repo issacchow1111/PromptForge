@@ -6,6 +6,9 @@ public class RequestValidationMiddleware
 {
     private readonly RequestDelegate _next;
     private const int MaxPromptLength = 10_000;
+    private const int MaxInstructionLength = 5_000;
+    private const int MaxPreconditionLength = 10_000;
+    private const int MaxTotalTextLength = 25_000;
 
     public RequestValidationMiddleware(RequestDelegate next)
     {
@@ -51,14 +54,46 @@ public class RequestValidationMiddleware
                 return;
             }
 
-            var text = GetString(root, "userPrompt")
-                    ?? GetString(root, "currentPrompt")
-                    ?? GetString(root, "instruction")
-                    ?? string.Empty;
+            var userPrompt = GetString(root, "userPrompt") ?? string.Empty;
+            var currentPrompt = GetString(root, "currentPrompt") ?? string.Empty;
+            var originalPrompt = GetString(root, "originalPrompt") ?? string.Empty;
+            var instruction = GetString(root, "instruction") ?? string.Empty;
+            var precondition = GetString(root, "precondition") ?? string.Empty;
 
-            if (text.Length > MaxPromptLength)
+            if (userPrompt.Length > MaxPromptLength)
             {
-                await WriteErrorAsync(context, StatusCodes.Status400BadRequest, "PROMPT_TOO_LONG", "输入内容过长，请控制在 10000 字符以内");
+                await WriteErrorAsync(context, StatusCodes.Status400BadRequest, "PROMPT_TOO_LONG", "待优化提示词过长，请控制在 10000 字符以内");
+                return;
+            }
+
+            if (currentPrompt.Length > MaxPromptLength)
+            {
+                await WriteErrorAsync(context, StatusCodes.Status400BadRequest, "CURRENT_PROMPT_TOO_LONG", "当前版本提示词过长，请控制在 10000 字符以内");
+                return;
+            }
+
+            if (originalPrompt.Length > MaxPromptLength)
+            {
+                await WriteErrorAsync(context, StatusCodes.Status400BadRequest, "ORIGINAL_PROMPT_TOO_LONG", "原始提示词过长，请控制在 10000 字符以内");
+                return;
+            }
+
+            if (instruction.Length > MaxInstructionLength)
+            {
+                await WriteErrorAsync(context, StatusCodes.Status400BadRequest, "INSTRUCTION_TOO_LONG", "迭代要求过长，请控制在 5000 字符以内");
+                return;
+            }
+
+            if (precondition.Length > MaxPreconditionLength)
+            {
+                await WriteErrorAsync(context, StatusCodes.Status400BadRequest, "PRECONDITION_TOO_LONG", "前置条件过长，请控制在 10000 字符以内");
+                return;
+            }
+
+            var totalTextLength = userPrompt.Length + currentPrompt.Length + originalPrompt.Length + instruction.Length + precondition.Length;
+            if (totalTextLength > MaxTotalTextLength)
+            {
+                await WriteErrorAsync(context, StatusCodes.Status400BadRequest, "REQUEST_TOO_LONG", "请求文本总量过长，请缩短输入后重试");
                 return;
             }
         }

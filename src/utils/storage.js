@@ -11,6 +11,52 @@ db.open().catch(e => {
   idbAvailable = false
 })
 
+function safeJsonParse (value, fallback, label = 'JSON') {
+  if (!value) return fallback
+  try {
+    return JSON.parse(value)
+  } catch (e) {
+    console.warn(`${label} 解析失败，已使用默认值:`, e)
+    return fallback
+  }
+}
+
+function readLocalJson (key, fallback) {
+  return safeJsonParse(localStorage.getItem(key), fallback, key)
+}
+
+function getLocalHistory () {
+  const history = readLocalJson('prompt_optimizer_history', [])
+  return Array.isArray(history) ? history : []
+}
+
+function writeLocalHistory (history) {
+  localStorage.setItem('prompt_optimizer_history', JSON.stringify(history.slice(0, MAX_HISTORY_ITEMS)))
+}
+
+function sanitizeConfigForExport (config) {
+  if (!config || typeof config !== 'object') return config
+  const { apiKey, ...safeConfig } = config
+  return {
+    ...safeConfig,
+    apiKey: ''
+  }
+}
+
+async function mirrorIdbHistoryToLocalStorage () {
+  if (!idbAvailable) return
+  try {
+    const history = await db.history
+      .orderBy('createdAt')
+      .reverse()
+      .limit(MAX_HISTORY_ITEMS)
+      .toArray()
+    writeLocalHistory(history)
+  } catch (e) {
+    console.warn('同步历史记录到 localStorage 失败:', e)
+  }
+}
+
 // ========== 配置 ==========
 export async function getConfig () {
   // Try IndexedDB first
@@ -25,7 +71,7 @@ export async function getConfig () {
   // Fall back to localStorage
   try {
     const data = localStorage.getItem('prompt_optimizer_config')
-    return data ? JSON.parse(data) : null
+    return data ? safeJsonParse(data, null, 'prompt_optimizer_config') : null
   } catch (e) {
     console.error('getConfig failed:', e)
     return null
@@ -59,7 +105,7 @@ export async function clearConfig () {
 
 // ========== 选中模式 ==========
 export async function getSelectedMode () {
-  if (!idbAvailable) {
+  const getLocalSelectedMode = () => {
     const modeId = localStorage.getItem('promptforge_selected_mode')
     if (!modeId) return null
     const validModeId = getPromptMode(modeId).id
@@ -68,6 +114,7 @@ export async function getSelectedMode () {
     }
     return validModeId
   }
+  if (!idbAvailable) return getLocalSelectedMode()
   try {
     const record = await db.kv.get('selectedMode')
     if (!record?.value) return null
@@ -77,18 +124,19 @@ export async function getSelectedMode () {
     }
     return validModeId
   } catch (e) {
-    console.error('getSelectedMode failed:', e)
-    return null
+    console.error('getSelectedMode failed, trying localStorage:', e)
+    return getLocalSelectedMode()
   }
 }
 
 export async function saveSelectedMode (modeId) {
+  const validModeId = getPromptMode(modeId).id
+  localStorage.setItem('promptforge_selected_mode', validModeId)
   if (!idbAvailable) {
-    localStorage.setItem('promptforge_selected_mode', getPromptMode(modeId).id)
     return true
   }
   try {
-    await db.kv.put({ key: 'selectedMode', value: getPromptMode(modeId).id })
+    await db.kv.put({ key: 'selectedMode', value: validModeId })
     return true
   } catch (e) {
     console.error('saveSelectedMode failed:', e)
@@ -98,21 +146,20 @@ export async function saveSelectedMode (modeId) {
 
 // ========== 前置条件 ==========
 export async function getPrecondition () {
-  if (!idbAvailable) {
-    return localStorage.getItem('promptforge_precondition') || ''
-  }
+  const getLocalPrecondition = () => localStorage.getItem('promptforge_precondition') || ''
+  if (!idbAvailable) return getLocalPrecondition()
   try {
     const record = await db.kv.get('precondition')
     return record?.value || ''
   } catch (e) {
-    console.error('getPrecondition failed:', e)
-    return ''
+    console.error('getPrecondition failed, trying localStorage:', e)
+    return getLocalPrecondition()
   }
 }
 
 export async function savePrecondition (value) {
+  localStorage.setItem('promptforge_precondition', String(value || ''))
   if (!idbAvailable) {
-    localStorage.setItem('promptforge_precondition', String(value || ''))
     return true
   }
   try {
@@ -125,8 +172,8 @@ export async function savePrecondition (value) {
 }
 
 export async function clearPrecondition () {
+  localStorage.removeItem('promptforge_precondition')
   if (!idbAvailable) {
-    localStorage.removeItem('promptforge_precondition')
     return true
   }
   try {
@@ -141,8 +188,7 @@ export async function clearPrecondition () {
 // ========== 历史记录 ==========
 export async function getHistory () {
   if (!idbAvailable) {
-    const data = localStorage.getItem('prompt_optimizer_history')
-    return data ? JSON.parse(data) : []
+    return getLocalHistory()
   }
   try {
     return await db.history
@@ -151,24 +197,24 @@ export async function getHistory () {
       .limit(MAX_HISTORY_ITEMS)
       .toArray()
   } catch (e) {
-    console.error('getHistory failed:', e)
-    return []
+    console.error('getHistory failed, trying localStorage:', e)
+    return getLocalHistory()
   }
 }
 
 export async function saveHistory (history) {
-  if (!idbAvailable) {
-    try {
-      localStorage.setItem('prompt_optimizer_history', JSON.stringify(history))
-      return true
-    } catch (e) {
-      if (e.name === 'QuotaExceededError') {
-        const trimmed = history.slice(0, Math.floor(history.length * 0.7))
-        localStorage.setItem('prompt_optimizer_history', JSON.stringify(trimmed))
-        return true
-      }
+  try {
+    writeLocalHistory(history)
+  } catch (e) {
+    if (e.name === 'QuotaExceededError') {
+      const trimmed = history.slice(0, Math.floor(history.length * 0.7))
+      writeLocalHistory(trimmed)
+    } else if (!idbAvailable) {
       return false
     }
+  }
+  if (!idbAvailable) {
+    return true
   }
   try {
     await db.transaction('rw', db.history, async () => {
@@ -188,7 +234,7 @@ export async function addToHistory (item) {
     return false
   }
   if (!idbAvailable) {
-    const history = JSON.parse(localStorage.getItem('prompt_optimizer_history') || '[]')
+    const history = getLocalHistory()
     history.unshift(item)
     if (history.length > MAX_HISTORY_ITEMS) {
       history.length = MAX_HISTORY_ITEMS
@@ -205,10 +251,12 @@ export async function addToHistory (item) {
         .primaryKeys()
       await db.history.bulkDelete(oldest)
     }
+    await mirrorIdbHistoryToLocalStorage()
     return true
   } catch (e) {
     if (e.name === 'ConstraintError') {
       await db.history.put(item)
+      await mirrorIdbHistoryToLocalStorage()
       return true
     }
     console.error('addToHistory failed:', e)
@@ -218,7 +266,7 @@ export async function addToHistory (item) {
 
 export async function updateHistoryItem (id, updates) {
   if (!idbAvailable) {
-    const history = JSON.parse(localStorage.getItem('prompt_optimizer_history') || '[]')
+    const history = getLocalHistory()
     const index = history.findIndex(item => item.id === id)
     if (index !== -1) {
       history[index] = { ...history[index], ...updates }
@@ -228,6 +276,7 @@ export async function updateHistoryItem (id, updates) {
   }
   try {
     await db.history.update(id, updates)
+    await mirrorIdbHistoryToLocalStorage()
     return true
   } catch (e) {
     console.error('updateHistoryItem failed:', e)
@@ -237,12 +286,13 @@ export async function updateHistoryItem (id, updates) {
 
 export async function deleteFromHistory (id) {
   if (!idbAvailable) {
-    const history = JSON.parse(localStorage.getItem('prompt_optimizer_history') || '[]')
+    const history = getLocalHistory()
     const filtered = history.filter(item => item.id !== id)
     return saveHistory(filtered)
   }
   try {
     await db.history.delete(id)
+    await mirrorIdbHistoryToLocalStorage()
     return true
   } catch (e) {
     console.error('deleteFromHistory failed:', e)
@@ -255,12 +305,11 @@ export async function searchHistory (keyword) {
   if (!keyword.trim()) return getHistory()
   const lower = keyword.toLowerCase()
   if (!idbAvailable) {
-    const data = localStorage.getItem('prompt_optimizer_history')
-    const all = data ? JSON.parse(data) : []
+    const all = getLocalHistory()
     return all
       .filter(item =>
-        item.name.toLowerCase().includes(lower) ||
-        item.content.toLowerCase().includes(lower)
+        String(item.name || '').toLowerCase().includes(lower) ||
+        String(item.content || '').toLowerCase().includes(lower)
       )
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 50)
@@ -269,8 +318,8 @@ export async function searchHistory (keyword) {
     const all = await db.history.toArray()
     return all
       .filter(item =>
-        item.name.toLowerCase().includes(lower) ||
-        item.content.toLowerCase().includes(lower)
+        String(item.name || '').toLowerCase().includes(lower) ||
+        String(item.content || '').toLowerCase().includes(lower)
       )
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 50)
@@ -290,7 +339,7 @@ export async function exportData () {
   ])
 
   const data = {
-    config,
+    config: sanitizeConfigForExport(config),
     selectedMode: selectedMode?.value || null,
     precondition: precondition?.value || '',
     history,
@@ -315,12 +364,13 @@ export async function importData (jsonString) {
     if (data.selectedMode) await saveSelectedMode(data.selectedMode)
     if (typeof data.precondition === 'string') await savePrecondition(data.precondition)
     if (data.history && Array.isArray(data.history)) {
-      const valid = data.history.filter(validateHistoryItem)
+      const valid = normalizeImportedHistory(data.history)
       if (idbAvailable) {
         await db.transaction('rw', db.history, async () => {
           await db.history.clear()
           await db.history.bulkAdd(valid)
         })
+        writeLocalHistory(valid)
       } else {
         await saveHistory(valid)
       }
@@ -342,4 +392,20 @@ function validateHistoryItem (item) {
     item.content = item.content.slice(0, MAX_ITEM_LENGTH)
   }
   return true
+}
+
+function normalizeImportedHistory (history) {
+  const byId = new Map()
+  history
+    .filter(validateHistoryItem)
+    .forEach(item => {
+      const existing = byId.get(item.id)
+      if (!existing || new Date(item.createdAt || 0) >= new Date(existing.createdAt || 0)) {
+        byId.set(item.id, item)
+      }
+    })
+
+  return Array.from(byId.values())
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+    .slice(0, MAX_HISTORY_ITEMS)
 }

@@ -36,9 +36,13 @@
               class="menu-status configured"
             >已配置</span>
             <span
-              v-else-if="hasConfig"
+              v-else-if="props.proxyConfigured"
               class="menu-status proxy"
             >代理模式</span>
+            <span
+              v-else-if="props.proxyReachable"
+              class="menu-status unconfigured"
+            >代理未配置</span>
             <span
               v-else
               class="menu-status unconfigured"
@@ -109,8 +113,11 @@
                 </div>
               </div>
 
-              <p v-if="props.proxyAvailable && !hasUserKey" class="proxy-hint">
+              <p v-if="props.proxyConfigured && !hasUserKey" class="proxy-hint">
                 未填写 API Key，将使用服务端代理发送请求
+              </p>
+              <p v-else-if="props.proxyReachable && !props.proxyConfigured && !hasUserKey" class="proxy-hint warning">
+                代理服务已启动，但尚未配置上游模型
               </p>
 
               <button v-if="hasConfig" class="btn-clear" @click="handleClear">
@@ -191,7 +198,7 @@
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              导出备份
+              导出备份（不含 Key）
             </button>
             <label class="btn-history-action" role="button" tabindex="0">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -224,6 +231,14 @@ const props = defineProps({
     default: null
   },
   proxyAvailable: {
+    type: Boolean,
+    default: false
+  },
+  proxyReachable: {
+    type: Boolean,
+    default: false
+  },
+  proxyConfigured: {
     type: Boolean,
     default: false
   },
@@ -341,9 +356,7 @@ function handleView(item) {
 }
 
 function handleDelete(item) {
-  if (confirm(`确定要删除「${item.name}」吗？`)) {
-    emit('delete', item)
-  }
+  emit('delete', item)
 }
 
 function handleExport () {
@@ -373,14 +386,20 @@ onUnmounted(() => {
 })
 
 function checkShouldShow() {
-  if (!props.proxyAvailable && !hasConfig.value) {
+  if (!props.proxyConfigured && !hasConfig.value) {
     isOpen.value = true
     configExpanded.value = false
   }
 }
 
+function openConfig() {
+  isOpen.value = true
+  configExpanded.value = true
+}
+
 defineExpose({
-  checkShouldShow
+  checkShouldShow,
+  openConfig
 })
 </script>
 
