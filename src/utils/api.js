@@ -62,6 +62,50 @@ function repairJson (text) {
   return fixed
 }
 
+/**
+ * 从无法被 JSON.parse 的原始文本中，尝试提取 optimizedPrompt 字段的内容。
+ * 用于模型返回损坏 JSON 时的最后兜底，避免把整个原始 JSON 显示在结果窗口。
+ */
+function extractOptimizedPromptFromRawText (content) {
+  const jsonLike = extractJsonContent(content)
+
+  // 匹配 optimizedPrompt 键，允许键名缺少开头引号
+  const keyMatch = jsonLike.match(/"?optimizedPrompt"\s*:\s*"/)
+  if (!keyMatch) return null
+
+  const startIndex = keyMatch.index + keyMatch[0].length
+  let result = ''
+  let i = startIndex
+
+  while (i < jsonLike.length) {
+    const char = jsonLike[i]
+
+    if (char === '\\') {
+      const next = jsonLike[i + 1]
+      if (next === 'n') result += '\n'
+      else if (next === 't') result += '\t'
+      else if (next === 'r') result += '\r'
+      else if (next === '"') result += '"'
+      else if (next === '\\') result += '\\'
+      else if (next === 'u' && /[0-9a-fA-F]{4}/.test(jsonLike.slice(i + 2, i + 6))) {
+        const code = parseInt(jsonLike.slice(i + 2, i + 6), 16)
+        result += String.fromCharCode(code)
+        i += 4
+      } else {
+        result += next || ''
+      }
+      i += 2
+    } else if (char === '"') {
+      break
+    } else {
+      result += char
+      i++
+    }
+  }
+
+  return result.trim() || null
+}
+
 export function parseOptimizationResult (content) {
   const rawContent = String(content || '')
   const jsonContent = extractJsonContent(rawContent)
@@ -94,6 +138,17 @@ export function parseOptimizationResult (content) {
       }
     } catch {
       // try next repair
+    }
+  }
+
+  const extractedPrompt = extractOptimizedPromptFromRawText(rawContent)
+  if (extractedPrompt) {
+    return {
+      diagnosis: null,
+      score: null,
+      optimizedPrompt: extractedPrompt,
+      rawContent,
+      structured: false
     }
   }
 
