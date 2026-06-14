@@ -74,13 +74,21 @@ export function parseOptimizationResult (content) {
   for (const text of attempts) {
     try {
       const parsed = JSON.parse(text)
-      if (!parsed || typeof parsed !== 'object' || typeof parsed.optimizedPrompt !== 'string') {
+      if (!parsed || typeof parsed !== 'object') {
+        continue
+      }
+      const optimizedPrompt = typeof parsed.optimizedPrompt === 'string'
+        ? parsed.optimizedPrompt
+        : typeof parsed.optimized === 'string'
+          ? parsed.optimized
+          : null
+      if (!optimizedPrompt) {
         continue
       }
       return {
         diagnosis: parsed.diagnosis && typeof parsed.diagnosis === 'object' ? parsed.diagnosis : null,
         score: parsed.score && typeof parsed.score === 'object' ? parsed.score : null,
-        optimizedPrompt: parsed.optimizedPrompt,
+        optimizedPrompt,
         rawContent,
         structured: true
       }
@@ -93,11 +101,12 @@ export function parseOptimizationResult (content) {
 }
 
 export function hasCompleteOptimizationReport (result) {
+  const optimizedPrompt = result?.optimizedPrompt || result?.optimized
   return Boolean(
     result &&
     result.structured !== false &&
-    typeof result.optimizedPrompt === 'string' &&
-    result.optimizedPrompt.trim() &&
+    typeof optimizedPrompt === 'string' &&
+    optimizedPrompt.trim() &&
     result.diagnosis &&
     typeof result.diagnosis === 'object' &&
     result.score &&
