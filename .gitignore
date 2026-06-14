@@ -7,6 +7,7 @@ docs
 .DS_Store
 server-dotnet/**/.env
 server-dotnet/**/appsettings.Development.json
+server-dotnet/**/appsettings.Production.json
 server-dotnet/**/*.user
 server-dotnet/**/.vs
 server-dotnet/**/bin

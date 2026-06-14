@@ -88,7 +88,16 @@
           </div>
 
           <div v-if="error" class="result-content plain">
-            <div class="error-message">{{ error }}</div>
+            <div class="error-message">
+              <div>{{ error }}</div>
+              <button class="btn btn-primary btn-small retry-btn" @click="emit('retry')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+                重试
+              </button>
+            </div>
           </div>
 
           <div
@@ -106,7 +115,11 @@
                   <div class="score-summary">{{ overallScore }}</div>
                 </div>
                 <div class="score-bar" aria-hidden="true">
-                  <span :style="{ width: `${overallScore}%` }"></span>
+                  <span
+                    :style="{ width: `${overallScore}%` }"
+                    :class="getScoreBarClass(overallScore)"
+                    :title="`总评分：${overallScore} 分`"
+                  ></span>
                 </div>
               </div>
 
@@ -121,7 +134,11 @@
                     <strong>{{ dimension.score }}</strong>
                   </div>
                   <div class="score-mini-bar" aria-hidden="true">
-                    <span :style="{ width: `${dimension.score}%` }"></span>
+                    <span
+                      :style="{ width: `${dimension.score}%` }"
+                      :class="getScoreBarClass(dimension.score)"
+                      :title="dimension.comment || '暂无评价'"
+                    ></span>
                   </div>
                   <p>{{ dimension.comment || "暂无评价" }}</p>
                 </div>
@@ -360,7 +377,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['save', 'copy', 'iterate', 'switch-version', 'update:result'])
+const emit = defineEmits(['save', 'copy', 'iterate', 'switch-version', 'update:result', 'retry'])
 
 const activePanel = ref('result')
 const viewMode = ref('markdown')
@@ -475,6 +492,12 @@ function normalizeScore (value) {
   const score = Number(value)
   if (!Number.isFinite(score)) return 0
   return Math.min(100, Math.max(0, Math.round(score)))
+}
+
+function getScoreBarClass (score) {
+  if (score >= 75) return 'score-bar-high'
+  if (score >= 50) return 'score-bar-medium'
+  return 'score-bar-low'
 }
 
 function normalizeList (value) {
@@ -691,6 +714,21 @@ defineExpose({
   border-radius: inherit;
 }
 
+.score-bar span.score-bar-high,
+.score-mini-bar span.score-bar-high {
+  background: linear-gradient(90deg, #34c759 0%, #66d887 100%);
+}
+
+.score-bar span.score-bar-medium,
+.score-mini-bar span.score-bar-medium {
+  background: linear-gradient(90deg, #ff9500 0%, #ffbc5c 100%);
+}
+
+.score-bar span.score-bar-low,
+.score-mini-bar span.score-bar-low {
+  background: linear-gradient(90deg, #ff3b30 0%, #ff6b63 100%);
+}
+
 .score-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -762,6 +800,18 @@ defineExpose({
   white-space: pre-wrap;
   word-break: break-word;
   font: inherit;
+}
+
+.result-content.plain .error-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.retry-btn {
+  flex-shrink: 0;
 }
 
 .iteration-toolbar {

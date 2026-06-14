@@ -13,15 +13,15 @@ export function extractOptimizedPrompt (accumulatedText) {
   const contentStart = keyMatch.index + keyMatch[0].length
   let content = accumulatedText.slice(contentStart)
 
-  // Check if the JSON is complete (optimizedPrompt string is closed)
-  // Look for the closing quote followed by optional } or ,}
-  const closeMatch = content.match(/(?<!\\)(?:\\\\)*"/)
-  if (closeMatch) {
+  // Find the first unescaped closing quote without regex lookbehind
+  // (Safari < 16.4 does not support negative lookbehind)
+  const closeIndex = findUnescapedQuote(content)
+  if (closeIndex !== -1) {
     // JSON is likely complete for this field - trim to content only
-    content = content.slice(0, closeMatch.index)
+    content = content.slice(0, closeIndex)
   } else {
-    // Still streaming - remove trailing partial escape sequences
-    content = content.replace(/(?<!\\)(?:\\\\)*\\$/, '')
+    // Still streaming - remove trailing partial escape sequence
+    content = stripTrailingPartialEscape(content)
   }
 
   // Handle JSON escape sequences (order matters: \\ must be first)
@@ -33,4 +33,30 @@ export function extractOptimizedPrompt (accumulatedText) {
     .replace(/\\r/g, '\r')              // \r → carriage return
     .replace(/\\u[\da-fA-F]{4}/g, '')   // unicode escapes (removed)
     .replace(/\x00/g, '\\')             // placeholder → \
+}
+
+function findUnescapedQuote (str) {
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === '\\') {
+      i++ // skip the escaped character
+      continue
+    }
+    if (str[i] === '"') {
+      return i
+    }
+  }
+  return -1
+}
+
+function stripTrailingPartialEscape (str) {
+  // If the string ends with an odd number of consecutive backslashes,
+  // the last one is an incomplete escape sequence and should be removed.
+  let backslashCount = 0
+  for (let i = str.length - 1; i >= 0 && str[i] === '\\'; i--) {
+    backslashCount++
+  }
+  if (backslashCount % 2 === 1) {
+    return str.slice(0, -1)
+  }
+  return str
 }

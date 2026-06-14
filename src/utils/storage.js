@@ -304,7 +304,8 @@ export async function exportData () {
   a.href = url
   a.download = `promptforge-backup-${new Date().toISOString().slice(0, 10)}.json`
   a.click()
-  URL.revokeObjectURL(url)
+  // Delay revoke to ensure Safari/Firefox can start the download
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 export async function importData (jsonString) {

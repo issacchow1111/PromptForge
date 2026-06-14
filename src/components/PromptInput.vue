@@ -116,7 +116,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   hasConfig: {
@@ -148,6 +148,31 @@ const props = defineProps({
 const emit = defineEmits(['optimize', 'clear', 'open-precondition', 'clear-precondition', 'update:selectedMode'])
 
 const promptText = ref('')
+
+const DRAFT_KEY = 'promptforge_draft'
+let draftSaveTimer = null
+
+onMounted(() => {
+  const draft = localStorage.getItem(DRAFT_KEY)
+  if (draft && !promptText.value) {
+    promptText.value = draft
+  }
+})
+
+onUnmounted(() => {
+  clearTimeout(draftSaveTimer)
+})
+
+watch(promptText, (value) => {
+  clearTimeout(draftSaveTimer)
+  draftSaveTimer = setTimeout(() => {
+    if (value.trim()) {
+      localStorage.setItem(DRAFT_KEY, value)
+    } else {
+      localStorage.removeItem(DRAFT_KEY)
+    }
+  }, 500)
+})
 
 const charCount = computed(() => promptText.value.length)
 

@@ -75,10 +75,12 @@ body {
   color: var(--text-primary);
   line-height: 1.5;
   overflow-x: hidden;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 #app {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -336,6 +338,12 @@ body {
   background: var(--bg-tertiary);
   color: var(--text-primary);
   transition: all var(--duration-fast) ease;
+}
+
+@media (max-width: 768px) {
+  .prompt-textarea {
+    min-height: 200px;
+  }
 }
 
 .prompt-textarea:focus {

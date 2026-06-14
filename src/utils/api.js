@@ -528,35 +528,27 @@ async function streamFromResponse (response, onChunk) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let fullContent = ''
+  let lineBuffer = ''
 
   try {
     while (true) {
       const { done, value } = await reader.read()
       if (done) {
         // Flush remaining bytes in the decoder buffer
-        fullContent += decoder.decode()
+        const tail = decoder.decode()
+        if (tail) {
+          lineBuffer += tail
+        }
+        processSseLine(lineBuffer)
         break
       }
 
-      const chunk = decoder.decode(value, { stream: true })
-      const lines = chunk.split('\n')
+      lineBuffer += decoder.decode(value, { stream: true })
+      const lines = lineBuffer.split('\n')
+      lineBuffer = lines.pop() // last line may be incomplete, keep for next chunk
 
       for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6)
-          if (data === '[DONE]') continue
-
-          try {
-            const parsed = JSON.parse(data)
-            const content = parsed.choices?.[0]?.delta?.content
-            if (content) {
-              fullContent += content
-              onChunk?.(fullContent)
-            }
-          } catch {
-            // ignore parse failures
-          }
-        }
+        processSseLine(line)
       }
     }
   } finally {
@@ -564,6 +556,24 @@ async function streamFromResponse (response, onChunk) {
   }
 
   return fullContent
+
+  function processSseLine (line) {
+    if (!line.startsWith('data: ')) return
+
+    const data = line.slice(6)
+    if (data === '[DONE]') return
+
+    try {
+      const parsed = JSON.parse(data)
+      const content = parsed.choices?.[0]?.delta?.content
+      if (content) {
+        fullContent += content
+        onChunk?.(fullContent)
+      }
+    } catch {
+      // ignore parse failures
+    }
+  }
 }
 
 /**

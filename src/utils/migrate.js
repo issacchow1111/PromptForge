@@ -23,8 +23,12 @@ export async function migrateFromLocalStorage () {
   await db.transaction('rw', [db.config, db.kv, db.history], async () => {
     const configData = localStorage.getItem(LEGACY_KEYS.config)
     if (configData) {
-      await db.config.put({ key: 'main', value: JSON.parse(configData) })
-      hasData = true
+      try {
+        await db.config.put({ key: 'main', value: JSON.parse(configData) })
+        hasData = true
+      } catch (e) {
+        console.warn('Failed to migrate legacy config:', e)
+      }
     }
 
     const modeData = localStorage.getItem(LEGACY_KEYS.selectedMode)
@@ -41,10 +45,14 @@ export async function migrateFromLocalStorage () {
 
     const historyData = localStorage.getItem(LEGACY_KEYS.history)
     if (historyData) {
-      const history = JSON.parse(historyData)
-      if (history.length > 0) {
-        await db.history.bulkAdd(history)
-        hasData = true
+      try {
+        const history = JSON.parse(historyData)
+        if (Array.isArray(history) && history.length > 0) {
+          await db.history.bulkAdd(history)
+          hasData = true
+        }
+      } catch (e) {
+        console.warn('Failed to migrate legacy history:', e)
       }
     }
 

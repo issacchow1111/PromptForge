@@ -73,6 +73,7 @@
         @iterate="handleIterate"
         @switch-version="handleSwitchIteration"
         @update:result="handleResultUpdate"
+        @retry="handleRetry"
       />
     </section>
 
@@ -90,6 +91,8 @@
       @copy="handleHistoryCopy"
       @openHistory="handleOpenHistory"
       @view="handleOpenHistoryItem"
+      @export="handleExport"
+      @import="handleImport"
     />
 
     <!-- Full History Drawer -->
@@ -143,7 +146,29 @@
         </div>
 
         <div class="drawer-content">
-          <div v-if="history.length === 0" class="drawer-empty">
+          <div class="drawer-search">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              v-model="historySearchKeyword"
+              type="text"
+              placeholder="搜索历史记录..."
+              class="drawer-search-input"
+            />
+          </div>
+
+          <div v-if="filteredHistory.length === 0" class="drawer-empty">
             <svg
               width="48"
               height="48"
@@ -164,7 +189,7 @@
           </div>
 
           <TransitionGroup name="slide-up">
-            <div v-for="item in history" :key="item.id" class="drawer-item">
+            <div v-for="item in filteredHistory" :key="item.id" class="drawer-item">
               <div class="drawer-item-header">
                 <div class="drawer-item-name">{{ item.name }}</div>
                 <div class="drawer-item-time">
@@ -360,7 +385,7 @@
           </a>
         </div>
         <div class="footer-copyright">
-          © 2026 PromptForge. Made with by issacchow1111
+          © 2026 PromptForge. Made with ❤️ by issacchow1111
         </div>
       </div>
     </footer>
@@ -378,7 +403,7 @@ import Toast from './components/Toast.vue'
 import HistoryModal from './components/HistoryModal.vue'
 import PreconditionModal from './components/PreconditionModal.vue'
 import ThinkingOverlay from './components/ThinkingOverlay.vue'
-import { getConfig, saveConfig, clearConfig, getSelectedMode, saveSelectedMode, getHistory, addToHistory, updateHistoryItem, deleteFromHistory, getPrecondition, savePrecondition, clearPrecondition } from './utils/storage.js'
+import { getConfig, saveConfig, clearConfig, getSelectedMode, saveSelectedMode, getHistory, addToHistory, updateHistoryItem, deleteFromHistory, getPrecondition, savePrecondition, clearPrecondition, searchHistory, exportData, importData } from './utils/storage.js'
 import { hasCompleteOptimizationReport, streamOptimizeOrIterate, parseOptimizationResult } from './utils/api.js'
 import { extractOptimizedPrompt } from './utils/streamParser.js'
 import { copyToClipboard } from './utils/clipboard.js'
@@ -406,7 +431,19 @@ const resultDisplayRef = ref(null)
 const promptInputRef = ref(null)
 const floatMenuRef = ref(null)
 const historyOpen = ref(false)
+const historySearchKeyword = ref('')
+const filteredHistory = ref([])
 const proxyAvailable = ref(false)
+
+// Initialize filtered history whenever history changes
+watch(history, (newHistory) => {
+  filteredHistory.value = newHistory
+}, { immediate: true })
+
+// Search history when keyword changes
+watch(historySearchKeyword, async (keyword) => {
+  filteredHistory.value = await searchHistory(keyword)
+})
 
 // Modal state
 const showModal = ref(false)
@@ -443,12 +480,13 @@ onMounted(async () => {
     showToast('加载数据失败，请刷新页面重试', 'error')
   }
 
-  // Detect whether backend proxy is available
+  // Detect whether backend proxy service is running
   try {
     const res = await fetch('/api/health')
     if (res.ok) {
       const data = await res.json()
-      proxyAvailable.value = !!data.proxyConfigured
+      // 后端服务只要响应成功就认为代理可用；上游 API 是否配置由后端请求时返回错误
+      proxyAvailable.value = data.success === true
     }
   } catch (e) {
     proxyAvailable.value = false
@@ -594,6 +632,16 @@ async function handleOptimize (prompt) {
   }
 }
 
+function handleRetry () {
+  if (originalPrompt.value) {
+    handleOptimize(originalPrompt.value)
+  } else if (promptInputRef.value?.promptText) {
+    handleOptimize(promptInputRef.value.promptText)
+  } else {
+    showToast('没有可重试的提示词', 'error')
+  }
+}
+
 // Stop thinking handler
 function handleStopThinking () {
   if (abortController.value) {
@@ -736,6 +784,7 @@ function handleSave () {
     }
     await addToHistory(item)
     history.value = await getHistory()
+    historyOpen.value = true
     showToast('已保存到历史记录', 'success')
   }
 
@@ -765,8 +814,13 @@ async function handleCopyItem (item) {
   }
 }
 
-function handleHistoryCopy (item) {
-  showToast('已复制到剪贴板', 'success')
+async function handleHistoryCopy (item) {
+  const success = await copyToClipboard(item.content)
+  if (success) {
+    showToast('已复制到剪贴板', 'success')
+  } else {
+    showToast('复制失败，请手动复制', 'error')
+  }
 }
 
 // History handlers
@@ -826,6 +880,37 @@ function handleOpenHistory () {
 function handleOpenHistoryItem (item) {
   historyModalItem.value = item
   showHistoryModal.value = true
+}
+
+async function handleExport () {
+  try {
+    await exportData()
+    showToast('备份已导出', 'success')
+  } catch (e) {
+    console.error('导出失败:', e)
+    showToast('导出失败，请重试', 'error')
+  }
+}
+
+async function handleImport (jsonString) {
+  try {
+    const success = await importData(jsonString)
+    if (success) {
+      history.value = await getHistory()
+      const cfg = await getConfig()
+      if (cfg) config.value = cfg
+      const mode = await getSelectedMode()
+      if (mode) selectedMode.value = getPromptMode(mode).id
+      const pre = await getPrecondition()
+      if (typeof pre === 'string') precondition.value = pre
+      showToast('备份已导入', 'success')
+    } else {
+      showToast('导入失败，文件格式可能不正确', 'error')
+    }
+  } catch (e) {
+    console.error('导入失败:', e)
+    showToast('导入失败，请检查文件内容', 'error')
+  }
 }
 
 async function handleHistoryModalSave (updatedItem) {
@@ -1035,6 +1120,7 @@ function showToast (message, type = 'info') {
   width: 440px;
   max-width: 90vw;
   height: 100vh;
+  height: 100dvh;
   background: var(--bg-elevated);
   backdrop-filter: blur(30px) saturate(180%);
   -webkit-backdrop-filter: blur(30px) saturate(180%);
@@ -1043,6 +1129,22 @@ function showToast (message, type = 'info') {
   flex-direction: column;
   box-shadow: -8px 0 40px rgba(0, 0, 0, 0.15);
   border-left: 1px solid var(--border);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
+}
+
+@media (max-width: 480px) {
+  .drawer-panel {
+    width: 100vw;
+    max-width: 100vw;
+  }
+
+  .drawer-header {
+    padding: 16px 20px;
+  }
+
+  .drawer-content {
+    padding: 16px;
+  }
 }
 
 .drawer-header {
@@ -1085,6 +1187,39 @@ function showToast (message, type = 'info') {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
+}
+
+.drawer-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+  color: var(--text-tertiary);
+  transition: all 0.2s ease;
+}
+
+.drawer-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+  color: var(--accent);
+}
+
+.drawer-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.drawer-search-input::placeholder {
+  color: var(--text-tertiary);
 }
 
 .drawer-empty {

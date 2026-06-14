@@ -84,12 +84,29 @@
 
               <div class="form-row">
                 <label>API Key</label>
-                <input
-                  v-model="localConfig.apiKey"
-                  type="password"
-                  placeholder="sk-xxxxxxxx"
-                  @input="emitUpdate"
-                />
+                <div class="password-input-wrapper">
+                  <input
+                    v-model="localConfig.apiKey"
+                    :type="apiKeyVisible ? 'text' : 'password'"
+                    placeholder="sk-xxxxxxxx"
+                    @input="emitUpdate"
+                  />
+                  <button
+                    type="button"
+                    class="password-toggle"
+                    @click="apiKeyVisible = !apiKeyVisible"
+                    :title="apiKeyVisible ? '隐藏' : '显示'"
+                  >
+                    <svg v-if="apiKeyVisible" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               <p v-if="props.proxyAvailable && !hasUserKey" class="proxy-hint">
@@ -107,7 +124,7 @@
         <div class="menu-divider"></div>
 
         <!-- History Section -->
-        <div class="menu-section">
+        <div class="menu-section menu-section-history">
           <div class="menu-section-header">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="10"/>
@@ -166,6 +183,26 @@
               查看全部 {{ history.length }} 条 →
             </button>
           </div>
+
+          <div class="menu-history-actions-footer">
+            <button class="btn-history-action" @click="handleExport">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              导出备份
+            </button>
+            <label class="btn-history-action" role="button" tabindex="0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              导入备份
+              <input type="file" accept=".json,application/json" class="sr-only" @change="handleImport" />
+            </label>
+          </div>
         </div>
       </div>
     </Transition>
@@ -204,12 +241,15 @@ const emit = defineEmits([
   'delete',
   'copy',
   'openHistory',
-  'view'
+  'view',
+  'export',
+  'import'
 ])
 
 const isOpen = ref(false)
 const configExpanded = ref(false)
 const copiedId = ref(null)
+const apiKeyVisible = ref(false)
 const emptyConfig = {
   provider: '',
   model: '',
@@ -247,7 +287,7 @@ watch(hasDirectConfig, (valid) => {
 function toggleMenu() {
   isOpen.value = !isOpen.value
   if (isOpen.value) {
-    configExpanded.value = !hasConfig.value
+    configExpanded.value = false
   }
 }
 
@@ -306,6 +346,18 @@ function handleDelete(item) {
   }
 }
 
+function handleExport () {
+  emit('export')
+}
+
+async function handleImport (event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  const text = await file.text()
+  emit('import', text)
+  event.target.value = ''
+}
+
 function handleKeydown(e) {
   if (e.key === 'Escape' && isOpen.value) {
     isOpen.value = false
@@ -323,7 +375,7 @@ onUnmounted(() => {
 function checkShouldShow() {
   if (!props.proxyAvailable && !hasConfig.value) {
     isOpen.value = true
-    configExpanded.value = true
+    configExpanded.value = false
   }
 }
 
@@ -336,8 +388,8 @@ defineExpose({
 /* Menu Button */
 .menu-btn {
   position: fixed;
-  top: 24px;
-  right: 24px;
+  top: calc(24px + env(safe-area-inset-top));
+  right: calc(24px + env(safe-area-inset-right));
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -370,10 +422,12 @@ defineExpose({
 /* Dropdown */
 .menu-dropdown {
   position: fixed;
-  top: 80px;
-  right: 24px;
+  top: calc(80px + env(safe-area-inset-top));
+  right: calc(24px + env(safe-area-inset-right));
   width: 380px;
+  max-width: calc(100vw - 48px - env(safe-area-inset-left) - env(safe-area-inset-right));
   max-height: 80vh;
+  max-height: calc(100dvh - 100px - env(safe-area-inset-top));
   background: var(--bg-elevated);
   backdrop-filter: blur(30px) saturate(180%);
   -webkit-backdrop-filter: blur(30px) saturate(180%);
@@ -384,6 +438,15 @@ defineExpose({
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
+}
+
+@media (max-width: 480px) {
+  .menu-dropdown {
+    right: calc(16px + env(safe-area-inset-right));
+    max-width: calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    max-height: calc(100dvh - 96px - env(safe-area-inset-top));
+    border-radius: var(--radius-lg);
+  }
 }
 
 .menu-section {
@@ -491,6 +554,39 @@ defineExpose({
   transition: all 0.2s ease;
 }
 
+.password-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrapper input {
+  padding-right: 40px;
+}
+
+.password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+}
+
+.password-toggle:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
 .form-row input:focus,
 .form-row select:focus {
   outline: none;
@@ -535,20 +631,32 @@ defineExpose({
   margin: 0 20px;
 }
 
+.menu-section-history {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
 /* History */
 .menu-empty {
   text-align: center;
   padding: 24px;
   color: var(--text-tertiary);
   font-size: 0.9rem;
+  flex-shrink: 0;
 }
 
 .menu-history-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 280px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .menu-history-item {
@@ -634,6 +742,50 @@ defineExpose({
 
 .btn-more:hover {
   background: rgba(0, 113, 227, 0.05);
+}
+
+.menu-history-actions-footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.btn-history-action {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-history-action:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Overlay */
