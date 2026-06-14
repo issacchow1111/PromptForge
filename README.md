@@ -173,14 +173,24 @@ http://localhost:5173
 
 ### 启动后端代理（可选）
 
+本地开发时，在 `server-dotnet/PromptForge.Proxy/` 下创建 `appsettings.Development.json`（已加入 `.gitignore`）：
+
+```json
+{
+  "Cors": { "Origin": "http://localhost:5173" },
+  "Proxy": {
+    "BaseUrl": "https://api.openai.com/v1",
+    "ApiKey": "sk-xxxxxxxx",
+    "Model": "gpt-4o-mini"
+  }
+}
+```
+
+然后启动后端：
+
 ```bash
 cd server-dotnet/PromptForge.Proxy
-ASPNETCORE_URLS=http://localhost:3000 \
-Proxy__BaseUrl=https://api.openai.com/v1 \
-Proxy__ApiKey=sk-xxxxxxxx \
-Proxy__Model=gpt-4o-mini \
-Cors__Origin=http://localhost:5173 \
-dotnet run --no-launch-profile
+ASPNETCORE_URLS=http://localhost:3000 dotnet run --no-launch-profile
 ```
 
 后端代理地址：
@@ -194,9 +204,9 @@ http://localhost:3000
 Docker Compose 会同时启动前端 Nginx 和后端 .NET 代理：
 
 ```bash
-# 1. 复制并编辑后端配置
-cp server-dotnet/PromptForge.Proxy/.env.example server-dotnet/PromptForge.Proxy/.env
-# 编辑 .env，填入真实的 Proxy__BaseUrl、Proxy__ApiKey、Proxy__Model
+# 1. 复制并编辑后端生产配置
+cp server-dotnet/PromptForge.Proxy/appsettings.json server-dotnet/PromptForge.Proxy/appsettings.Production.json
+# 编辑 appsettings.Production.json，填入真实的 Proxy:BaseUrl、Proxy:ApiKey、Proxy:Model
 
 # 2. 构建前端静态产物
 npm run build
@@ -215,6 +225,8 @@ docker-compose up --build -d
 - `npm run build` 生成 `dist/` 目录，前端镜像 `Dockerfile` 会把 `dist/` 复制到 Nginx 中
 - `nginx.conf` 配置前端监听 5173 端口，并把 `/api/` 转发给 `backend` 容器
 - 后端镜像基于 `server-dotnet/PromptForge.Proxy/Dockerfile`
+- `appsettings.Production.json` 已加入 `.gitignore`，不会被提交到 git
+- .NET 配置优先级：环境变量 > `appsettings.Production.json` > `appsettings.Development.json` > `appsettings.json`
 
 ---
 
@@ -231,14 +243,22 @@ docker-compose up --build -d
 
 只要接口遵循 OpenAI Chat Completions 风格，即可接入。
 
-**API Key 是可选的。** 如果不填写 API Key，请求会自动通过后端代理转发。此时需要在 `server-dotnet/PromptForge.Proxy/.env` 中配置服务端的上游模型接口：
+**API Key 是可选的。** 如果不填写 API Key，请求会自动通过后端代理转发。此时需要在服务端配置上游模型接口：
 
-```env
-ASPNETCORE_URLS=http://0.0.0.0:3000
-Proxy__BaseUrl=https://api.openai.com/v1
-Proxy__ApiKey=sk-xxxxxxxx
-Proxy__Model=gpt-4o-mini
-Cors__Origin=http://localhost:5173
+- 生产环境：`server-dotnet/PromptForge.Proxy/appsettings.Production.json`（不提交到 git）
+- 本地开发：`server-dotnet/PromptForge.Proxy/appsettings.Development.json`（不提交到 git）
+
+示例：
+
+```json
+{
+  "Cors": { "Origin": "http://localhost:5173" },
+  "Proxy": {
+    "BaseUrl": "https://api.openai.com/v1",
+    "ApiKey": "sk-xxxxxxxx",
+    "Model": "gpt-4o-mini"
+  }
+}
 ```
 
 如果填写了完整的 API Key、Base URL 和模型名称，则前端会直接向该接口发送请求。
@@ -302,7 +322,9 @@ PromptForge/
 │       ├── Program.cs
 │       ├── Dockerfile
 │       ├── PromptForge.Proxy.csproj
-│       ├── .env.example
+│       ├── appsettings.json
+│       ├── appsettings.Development.json   # 本地开发配置（不提交）
+│       ├── appsettings.Production.json    # 生产环境密钥（不提交）
 │       ├── Controllers/
 │       ├── Middleware/
 │       ├── Models/
@@ -542,14 +564,24 @@ http://localhost:5173
 
 ### Start the Backend Proxy (Optional)
 
+For local development, create `appsettings.Development.json` under `server-dotnet/PromptForge.Proxy/` (already in `.gitignore`):
+
+```json
+{
+  "Cors": { "Origin": "http://localhost:5173" },
+  "Proxy": {
+    "BaseUrl": "https://api.openai.com/v1",
+    "ApiKey": "sk-xxxxxxxx",
+    "Model": "gpt-4o-mini"
+  }
+}
+```
+
+Then start the backend:
+
 ```bash
 cd server-dotnet/PromptForge.Proxy
-ASPNETCORE_URLS=http://localhost:3000 \
-Proxy__BaseUrl=https://api.openai.com/v1 \
-Proxy__ApiKey=sk-xxxxxxxx \
-Proxy__Model=gpt-4o-mini \
-Cors__Origin=http://localhost:5173 \
-dotnet run --no-launch-profile
+ASPNETCORE_URLS=http://localhost:3000 dotnet run --no-launch-profile
 ```
 
 Backend proxy URL:
@@ -563,9 +595,9 @@ http://localhost:3000
 Docker Compose starts both the front-end Nginx and the back-end .NET proxy:
 
 ```bash
-# 1. Copy and edit backend configuration
-cp server-dotnet/PromptForge.Proxy/.env.example server-dotnet/PromptForge.Proxy/.env
-# Edit .env and fill in real Proxy__BaseUrl, Proxy__ApiKey, Proxy__Model
+# 1. Copy and edit backend production configuration
+cp server-dotnet/PromptForge.Proxy/appsettings.json server-dotnet/PromptForge.Proxy/appsettings.Production.json
+# Edit appsettings.Production.json and fill in real Proxy:BaseUrl, Proxy:ApiKey, Proxy:Model
 
 # 2. Build the front-end static assets
 npm run build
@@ -584,6 +616,8 @@ Notes:
 - `npm run build` generates the `dist/` directory; the front-end image `Dockerfile` copies `dist/` into Nginx
 - `nginx.conf` makes the front end listen on port 5173 and forwards `/api/` to the `backend` container
 - The back-end image is based on `server-dotnet/PromptForge.Proxy/Dockerfile`
+- `appsettings.Production.json` is in `.gitignore` and will not be committed
+- .NET configuration precedence: environment variables > `appsettings.Production.json` > `appsettings.Development.json` > `appsettings.json`
 
 ---
 
@@ -600,14 +634,22 @@ Open the app and fill in the top-right menu:
 
 Any interface that follows the OpenAI Chat Completions style can be connected.
 
-**The API Key is optional.** If you do not provide an API Key, requests will be forwarded automatically through the backend proxy. In this case, configure the upstream model interface in `server-dotnet/PromptForge.Proxy/.env`:
+**The API Key is optional.** If you do not provide an API Key, requests will be forwarded automatically through the backend proxy. In this case, configure the upstream model interface on the server:
 
-```env
-ASPNETCORE_URLS=http://0.0.0.0:3000
-Proxy__BaseUrl=https://api.openai.com/v1
-Proxy__ApiKey=sk-xxxxxxxx
-Proxy__Model=gpt-4o-mini
-Cors__Origin=http://localhost:5173
+- Production: `server-dotnet/PromptForge.Proxy/appsettings.Production.json` (not committed to git)
+- Local development: `server-dotnet/PromptForge.Proxy/appsettings.Development.json` (not committed to git)
+
+Example:
+
+```json
+{
+  "Cors": { "Origin": "http://localhost:5173" },
+  "Proxy": {
+    "BaseUrl": "https://api.openai.com/v1",
+    "ApiKey": "sk-xxxxxxxx",
+    "Model": "gpt-4o-mini"
+  }
+}
 ```
 
 If you provide a complete API Key, Base URL, and model name, the front end will send requests directly to that interface.
@@ -671,7 +713,9 @@ PromptForge/
 │       ├── Program.cs
 │       ├── Dockerfile
 │       ├── PromptForge.Proxy.csproj
-│       ├── .env.example
+│       ├── appsettings.json
+│       ├── appsettings.Development.json   # local dev config (not committed)
+│       ├── appsettings.Production.json    # production secrets (not committed)
 │       ├── Controllers/
 │       ├── Middleware/
 │       ├── Models/

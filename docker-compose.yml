@@ -8,8 +8,8 @@ services:
     container_name: promptforge-backend
     ports:
       - "3000:3000"
-    env_file:
-      - ./server-dotnet/PromptForge.Proxy/.env
+    volumes:
+      - ./server-dotnet/PromptForge.Proxy/appsettings.Production.json:/app/appsettings.Production.json:ro
     restart: unless-stopped
 
   frontend:
