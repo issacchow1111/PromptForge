@@ -106,7 +106,7 @@
     </Transition>
 
     <Transition name="slide-left">
-      <div v-if="historyOpen" class="drawer-panel">
+      <div v-if="historyOpen" ref="drawerPanelRef" class="drawer-panel">
         <div class="drawer-header">
           <h2 class="drawer-title">
             <svg
@@ -146,7 +146,16 @@
           </button>
         </div>
 
-        <div class="drawer-content">
+        <div ref="drawerContentRef" class="drawer-content">
+          <div
+            v-if="pullDistance > 0"
+            class="pull-indicator"
+            :style="{ transform: `translateY(${pullDistance}px)` }"
+          >
+            <span v-if="pullDistance < 80">继续下拉刷新</span>
+            <span v-else>松开刷新</span>
+          </div>
+
           <div class="drawer-search">
             <svg
               width="16"
@@ -410,6 +419,8 @@ import { hasCompleteOptimizationReport, streamOptimizeOrIterate, parseOptimizati
 import { extractOptimizedPrompt } from './utils/streamParser.js'
 import { copyToClipboard } from './utils/clipboard.js'
 import { DEFAULT_PROMPT_MODE_ID, PROMPT_MODES, getPromptMode } from './utils/promptModes.js'
+import { useSwipe } from './composables/useSwipe.js'
+import { usePullToRefresh } from './composables/usePullToRefresh.js'
 
 const config = ref(null)
 const history = ref([])
@@ -435,6 +446,8 @@ const floatMenuRef = ref(null)
 const historyOpen = ref(false)
 const historySearchKeyword = ref('')
 const filteredHistory = ref([])
+const drawerPanelRef = ref(null)
+const drawerContentRef = ref(null)
 const proxyReachable = ref(false)
 const proxyConfigured = ref(false)
 const proxyAvailable = computed(() => proxyReachable.value && proxyConfigured.value)
@@ -502,6 +515,31 @@ onMounted(async () => {
   } catch (e) {
     proxyReachable.value = false
     proxyConfigured.value = false
+  }
+})
+
+// Swipe to close drawer
+useSwipe(drawerPanelRef, {
+  threshold: 60,
+  enabled: () => historyOpen.value,
+  onSwipeRight: () => {
+    historyOpen.value = false
+  }
+})
+
+// Pull to refresh history
+const { pullDistance } = usePullToRefresh(drawerContentRef, {
+  threshold: 80,
+  enabled: () => historyOpen.value,
+  getScrollTop: () => drawerContentRef.value?.scrollTop || 0,
+  onRefresh: async () => {
+    try {
+      history.value = await getHistory()
+      showToast('历史记录已刷新', 'success')
+    } catch (e) {
+      console.error('刷新历史记录失败:', e)
+      showToast('刷新失败', 'error')
+    }
   }
 })
 
@@ -1219,6 +1257,22 @@ function showToast (message, type = 'info') {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
+  touch-action: pan-y;
+}
+
+.pull-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  pointer-events: none;
+  transition: transform 0.1s linear;
 }
 
 .drawer-search {

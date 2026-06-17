@@ -1,7 +1,10 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import { migrateFromLocalStorage } from './utils/migrate.js'
+import { initThemeBeforeMount } from './composables/useTheme.js'
 import './style.css'
+
+initThemeBeforeMount()
 
 async function init () {
   try {

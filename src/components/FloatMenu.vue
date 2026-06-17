@@ -19,7 +19,27 @@
 
     <!-- Menu Dropdown -->
     <Transition name="dropdown">
-      <div v-if="isOpen" class="menu-dropdown">
+      <div v-if="isOpen" ref="menuDropdownRef" class="menu-dropdown">
+        <!-- Theme Toggle -->
+        <div class="menu-section menu-section-compact">
+          <div class="menu-section-header clickable" @click="toggleTheme">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="5"/>
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+            <span class="menu-section-title">{{ isDark ? '深色模式' : '浅色模式' }}</span>
+            <div class="theme-toggle-thumb" :class="{ dark: isDark }">
+              <svg v-if="isDark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+              <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="5"/>
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
         <!-- Config Section -->
         <div class="menu-section">
           <div
@@ -224,6 +244,10 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { copyToClipboard } from '../utils/clipboard.js'
+import { useTheme } from '../composables/useTheme.js'
+import { useSwipe } from '../composables/useSwipe.js'
+
+const { isDark, toggleTheme } = useTheme()
 
 const props = defineProps({
   config: {
@@ -262,9 +286,22 @@ const emit = defineEmits([
 ])
 
 const isOpen = ref(false)
+const menuDropdownRef = ref(null)
 const configExpanded = ref(false)
 const copiedId = ref(null)
 const apiKeyVisible = ref(false)
+
+useSwipe(menuDropdownRef, {
+  threshold: 60,
+  enabled: () => isOpen.value,
+  onSwipeLeft: () => {
+    isOpen.value = false
+  },
+  onSwipeDown: () => {
+    isOpen.value = false
+  }
+})
+
 const emptyConfig = {
   provider: '',
   model: '',
@@ -457,6 +494,7 @@ defineExpose({
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border);
+  touch-action: pan-y;
 }
 
 @media (max-width: 480px) {
@@ -470,6 +508,40 @@ defineExpose({
 
 .menu-section {
   padding: 20px;
+}
+
+.menu-section-compact {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.theme-toggle-thumb {
+  width: 36px;
+  height: 20px;
+  border-radius: 9999px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  transition: all 0.25s var(--ease-out);
+  color: var(--text-secondary);
+}
+
+.theme-toggle-thumb.dark {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.theme-toggle-thumb svg {
+  transition: transform 0.25s var(--ease-out);
+}
+
+.theme-toggle-thumb.dark svg {
+  transform: rotate(360deg);
 }
 
 .menu-section-header {

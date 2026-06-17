@@ -104,6 +104,8 @@ PromptForge 是一个轻量级 Prompt 工作台，而非一次性输入框。
 | 本地持久化 | IndexedDB 主存储，localStorage 降级 |
 | 后端代理 | 未填 API Key 时通过服务端代理转发请求 |
 | 模型兼容 | 兼容 OpenAI Chat Completions 风格接口 |
+| 深色模式 | 右上角菜单切换，自动跟随系统偏好 |
+| 移动端手势 | 抽屉侧滑关闭、历史列表下拉刷新 |
 
 ---
 
@@ -285,6 +287,16 @@ docker-compose up --build -d
 - 在版本记录中切换不同版本
 - 保存为历史资产
 
+### 5. 切换深色模式与使用移动端手势
+
+点击右上角菜单顶部的主题开关，可在浅色/深色模式间切换。首次访问时会自动跟随系统偏好。
+
+在移动端（iPhone Safari 等）：
+
+- 打开历史抽屉后，向右滑动可关闭抽屉。
+- 历史列表滑到顶部后继续下拉，可刷新历史记录。
+- 打开右上角菜单后，向左或向下滑动可关闭菜单。
+
 ---
 
 ## 典型场景
@@ -337,16 +349,21 @@ PromptForge/
 │   ├── components/
 │   │   ├── PromptInput.vue     # 提示词输入与模式选择
 │   │   ├── ResultDisplay.vue   # 结果展示、编辑、继续迭代、版本记录
-│   │   ├── FloatMenu.vue       # 模型配置与快速历史入口
+│   │   ├── FloatMenu.vue       # 模型配置、主题切换与快速历史入口
 │   │   ├── HistoryDrawer.vue   # 历史记录侧边抽屉
 │   │   ├── HistoryModal.vue    # 历史记录详情与编辑
 │   │   ├── Modal.vue           # 通用输入弹窗
 │   │   ├── Toast.vue           # 状态提示
 │   │   └── PreconditionModal.vue  # 全局前置条件编辑
+│   ├── composables/
+│   │   ├── useTheme.js         # 深色模式状态与持久化
+│   │   ├── useSwipe.js         # Pointer Events 滑动检测
+│   │   └── usePullToRefresh.js # 下拉刷新包装
 │   └── utils/
 │       ├── api.js              # 优化与迭代请求封装、结果解析、代理切换
 │       ├── promptModes.js      # 7 种模式的系统提示词定义
 │       ├── storage.js          # 本地数据访问层（含搜索、导入导出）
+│       ├── themeStorage.js     # 主题持久化
 │       ├── db.js               # Dexie / IndexedDB 定义
 │       ├── migrate.js          # localStorage -> IndexedDB 迁移
 │       └── clipboard.js        # 剪贴板写入与降级
@@ -495,6 +512,8 @@ It can be used as a purely front-end, privately deployable prompt tool.
 | Local Persistence | IndexedDB primary storage with localStorage fallback |
 | Backend Proxy | Forward requests through a server-side proxy when no API Key is provided |
 | Model Compatibility | Compatible with OpenAI Chat Completions style APIs |
+| Dark Mode | Toggle in the top-right menu; follows system preference on first visit |
+| Mobile Gestures | Swipe to close drawers, pull-to-refresh history list |
 
 ---
 
@@ -676,6 +695,16 @@ After optimization, you can:
 - Switch between versions in the version history
 - Save the result as a historical asset
 
+### 5. Switch Dark Mode and Use Mobile Gestures
+
+Click the theme toggle at the top of the top-right menu to switch between light and dark mode. On first visit, the theme follows the system preference.
+
+On mobile (iPhone Safari, etc.):
+
+- Swipe right to close the history drawer.
+- Pull down the history list when scrolled to the top to refresh.
+- Swipe left or down to close the top-right menu.
+
 ---
 
 ## Typical Scenarios
@@ -728,16 +757,21 @@ PromptForge/
 │   ├── components/
 │   │   ├── PromptInput.vue     # Prompt input and mode selection
 │   │   ├── ResultDisplay.vue   # Result display, editing, iteration, version records
-│   │   ├── FloatMenu.vue       # Model config and quick history entry
+│   │   ├── FloatMenu.vue       # Model config, theme toggle and quick history entry
 │   │   ├── HistoryDrawer.vue   # History side drawer
 │   │   ├── HistoryModal.vue    # History details and editing
 │   │   ├── Modal.vue           # Generic input modal
 │   │   ├── Toast.vue           # Status toast
 │   │   └── PreconditionModal.vue  # Global precondition editor
+│   ├── composables/
+│   │   ├── useTheme.js         # Dark mode state and persistence
+│   │   ├── useSwipe.js         # Pointer-event swipe detector
+│   │   └── usePullToRefresh.js # Pull-to-refresh wrapper
 │   └── utils/
 │       ├── api.js              # Optimization/iteration requests, parsing, proxy switching
 │       ├── promptModes.js      # System prompt definitions for the 7 modes
 │       ├── storage.js          # Local data access layer (search, import/export)
+│       ├── themeStorage.js     # Theme persistence
 │       ├── db.js               # Dexie / IndexedDB definitions
 │       ├── migrate.js          # localStorage -> IndexedDB migration
 │       └── clipboard.js        # Clipboard write with fallback
