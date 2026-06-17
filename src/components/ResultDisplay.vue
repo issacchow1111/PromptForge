@@ -962,6 +962,32 @@ defineExpose({
 }
 
 @media (max-width: 720px) {
+  .result-card .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .result-controls {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .result-tabs {
+    width: 100%;
+  }
+
+  .result-tabs .tab-btn {
+    flex: 1;
+  }
+
+  .result-controls > .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
   .result-controls,
   .score-overview {
     align-items: stretch;
