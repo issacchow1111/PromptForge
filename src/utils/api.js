@@ -349,10 +349,10 @@ function createRequestSession (config) {
     transportMode,
     configSnapshot: transportMode === 'direct'
       ? {
-          baseURL: config.baseURL,
-          apiKey: config.apiKey,
-          model: config.model
-        }
+        baseURL: config.baseURL,
+        apiKey: config.apiKey,
+        model: config.model
+      }
       : null
   }
 }
@@ -801,21 +801,23 @@ export async function streamOptimizeOrIterate (config, payload, onChunk, signal 
       const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
       const messages = isIteration
         ? [
-            { role: 'system', content: ITERATION_SYSTEM_PROMPT },
-            { role: 'user', content: JSON.stringify({
-                modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
-                originalPrompt: payload.originalPrompt || '',
-                precondition: payload.precondition || '',
-                currentPrompt: payload.currentPrompt,
-                iterationInstruction: payload.instruction,
-                diagnosis: payload.diagnosis || null,
-                score: payload.score || null
-              }, null, 2) }
-          ]
+          { role: 'system', content: ITERATION_SYSTEM_PROMPT },
+          {
+            role: 'user', content: JSON.stringify({
+              modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+              originalPrompt: payload.originalPrompt || '',
+              precondition: payload.precondition || '',
+              currentPrompt: payload.currentPrompt,
+              iterationInstruction: payload.instruction,
+              diagnosis: payload.diagnosis || null,
+              score: payload.score || null
+            }, null, 2)
+          }
+        ]
         : [
-            { role: 'system', content: getDirectOptimizationSystemPrompt(payload.modeId || DEFAULT_PROMPT_MODE_ID, hasClarifications) },
-            { role: 'user', content: createPromptMessage(payload.userPrompt, payload.precondition, payload.clarifications) }
-          ]
+          { role: 'system', content: getDirectOptimizationSystemPrompt(payload.modeId || DEFAULT_PROMPT_MODE_ID, hasClarifications) },
+          { role: 'user', content: createPromptMessage(payload.userPrompt, payload.precondition, payload.clarifications) }
+        ]
 
       return streamFromResponse(
         await fetchWithTimeout(url, {
@@ -834,22 +836,22 @@ export async function streamOptimizeOrIterate (config, payload, onChunk, signal 
     // Proxy mode
     const body = isIteration
       ? JSON.stringify({
-          modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
-          type: 'iteration',
-          currentPrompt: payload.currentPrompt,
-          instruction: payload.instruction,
-          originalPrompt: payload.originalPrompt || '',
-          precondition: payload.precondition || '',
-          diagnosis: payload.diagnosis || null,
-          score: payload.score || null
-        })
+        modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+        type: 'iteration',
+        currentPrompt: payload.currentPrompt,
+        instruction: payload.instruction,
+        originalPrompt: payload.originalPrompt || '',
+        precondition: payload.precondition || '',
+        diagnosis: payload.diagnosis || null,
+        score: payload.score || null
+      })
       : JSON.stringify({
-          modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
-          userPrompt: payload.userPrompt,
-          precondition: payload.precondition || '',
-          clarifications: hasClarifications ? payload.clarifications : undefined,
-          type: hasClarifications ? 'optimizeWithClarifications' : 'optimize'
-        })
+        modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
+        userPrompt: payload.userPrompt,
+        precondition: payload.precondition || '',
+        clarifications: hasClarifications ? payload.clarifications : undefined,
+        type: hasClarifications ? 'optimizeWithClarifications' : 'optimize'
+      })
 
     return streamFromResponse(
       await fetchWithTimeout('/api/proxy/chat/stream', {
@@ -971,13 +973,13 @@ export async function optimizePromptStream (config, userPrompt, modeId = DEFAULT
   const body = useProxy
     ? JSON.stringify({ modeId, userPrompt })
     : JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: getSystemPrompt(modeId) },
-          { role: 'user', content: userPrompt }
-        ],
-        stream: true
-      })
+      model: model,
+      messages: [
+        { role: 'system', content: getSystemPrompt(modeId) },
+        { role: 'user', content: userPrompt }
+      ],
+      stream: true
+    })
 
   const response = await fetchWithTimeout(url, {
     method: 'POST',

@@ -199,7 +199,11 @@
           </div>
 
           <TransitionGroup name="slide-up">
-            <div v-for="item in filteredHistory" :key="item.id" class="drawer-item">
+            <div
+              v-for="item in filteredHistory"
+              :key="item.id"
+              class="drawer-item"
+            >
               <div class="drawer-item-header">
                 <div class="drawer-item-name">{{ item.name }}</div>
                 <div class="drawer-item-time">
@@ -1369,7 +1373,8 @@ function showToast (message, type = 'info') {
   flex-direction: column;
   box-shadow: -8px 0 40px rgba(0, 0, 0, 0.15);
   border-left: 1px solid var(--border);
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) 0;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) 0;
 }
 
 @media (max-width: 480px) {

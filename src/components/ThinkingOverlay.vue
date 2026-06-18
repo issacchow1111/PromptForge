@@ -1,11 +1,22 @@
 <template>
   <Transition name="thinking">
     <div v-if="show" class="thinking-overlay">
-      <div class="thinking-content" :class="{ 'has-text': streamingText, 'is-clarifying': phase === 'clarifying' }">
+      <div
+        class="thinking-content"
+        :class="{
+          'has-text': streamingText,
+          'is-clarifying': phase === 'clarifying',
+        }"
+      >
         <p class="thinking-label">{{ phaseLabel }}</p>
 
-        <div v-if="phase === 'clarifying' && clarifyQuestion" class="clarify-panel">
-          <div class="clarify-progress">第 {{ clarifyIndex }} / {{ clarifyTotal }} 个问题</div>
+        <div
+          v-if="phase === 'clarifying' && clarifyQuestion"
+          class="clarify-panel"
+        >
+          <div class="clarify-progress">
+            第 {{ clarifyIndex }} / {{ clarifyTotal }} 个问题
+          </div>
           <p class="clarify-question">{{ clarifyQuestion.question }}</p>
 
           <div v-if="clarifyOptions.length" class="clarify-options">
@@ -34,8 +45,12 @@
             <button class="clarify-action ghost" @click="$emit('skip-clarify')">
               跳过，由 AI 合理假设
             </button>
-            <button class="clarify-action primary" :disabled="nextDisabled" @click="$emit('next-clarify')">
-              {{ clarifyIndex === clarifyTotal ? '开始生成' : '下一题' }}
+            <button
+              class="clarify-action primary"
+              :disabled="nextDisabled"
+              @click="$emit('next-clarify')"
+            >
+              {{ clarifyIndex === clarifyTotal ? "开始生成" : "下一题" }}
             </button>
           </div>
         </div>
@@ -300,12 +315,20 @@ watch(() => props.streamingText, async () => {
   animation: dotPulse 1.4s infinite ease-in-out both;
 }
 
-.dot:nth-child(1) { animation-delay: 0s; }
-.dot:nth-child(2) { animation-delay: 0.2s; }
-.dot:nth-child(3) { animation-delay: 0.4s; }
+.dot:nth-child(1) {
+  animation-delay: 0s;
+}
+.dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 @keyframes dotPulse {
-  0%, 80%, 100% {
+  0%,
+  80%,
+  100% {
     transform: scale(0.6);
     opacity: 0.4;
   }
