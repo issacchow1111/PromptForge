@@ -1,3 +1,6 @@
+using System.Text;
+using PromptForge.Proxy.Models;
+
 namespace PromptForge.Proxy.PromptModes;
 
 public class PromptModeRegistry
@@ -33,6 +36,46 @@ public class PromptModeRegistry
           },
           "optimizedPrompt": "优化后的提示词正文"
         }
+        """;
+
+    private const string ClarificationOutputRequirements = """
+        你的任务是先判断信息是否已经足够生成高质量优化结果，只有缺少关键信息且无法合理假设时才追问。
+
+        输出要求：
+        1. 必须只返回合法 JSON，不要返回 Markdown 代码块，不要在 JSON 前后添加解释。
+        2. 不要因为提示词较短就默认追问；如果只是轻微缺失，请直接判定为不需要追问。
+        3. needsClarification=false 时，questions 必须返回空数组。
+        4. needsClarification=true 时，questions 必须返回 1 到 5 个问题，能少问就少问，只问最影响最终优化结果的关键问题。
+        5. 每个问题必须包含 id、question、type、options、required 字段。
+        6. type 固定为 single_choice。
+        7. 每题 options 数量控制在 2 到 5 个，最后一个选项固定为 {"label":"其他/自定义","value":"__custom__"}。
+        8. 不要把“跳过，由 AI 合理假设”放进 options，这个按钮由前端提供。
+        9. 问题必须与当前优化模式相关，避免泛泛追问。
+
+        JSON 结构必须符合：
+        {
+          "needsClarification": true,
+          "reason": "说明为什么需要或不需要澄清",
+          "questions": [
+            {
+              "id": "question_id",
+              "question": "问题内容",
+              "type": "single_choice",
+              "options": [
+                { "label": "选项 1", "value": "value_1" },
+                { "label": "其他/自定义", "value": "__custom__" }
+              ],
+              "required": false
+            }
+          ]
+        }
+        """;
+
+    private const string ClarificationAwareRequirements = """
+        补充要求：
+        1. 如果上下文中包含“用户补充信息”，你必须将其用于完善最终结果。
+        2. 对标记为“由 AI 合理假设”的问题，你可以做合理假设，但不要在最终 optimizedPrompt 中暴露澄清过程。
+        3. 最终 optimizedPrompt 不要出现“根据你的回答”“你刚才选择了”等过程性表达，除非用户任务本身要求展示该过程。
         """;
 
     private readonly List<PromptMode> _modes =
@@ -195,10 +238,122 @@ public class PromptModeRegistry
         }
         """;
 
+      public string GetOptimizationSystemPrompt(string? id, bool includeClarifications = false)
+      {
+        var basePrompt = GetMode(id).SystemPrompt;
+        return includeClarifications
+          ? $"{basePrompt}\n\n{ClarificationAwareRequirements}"
+          : basePrompt;
+      }
+
+      public string GetClarificationSystemPrompt(string? id)
+      {
+        var mode = GetMode(id);
+
+        return $"""
+          你是一个专业的 AI 提示词分析师。你的职责是判断当前输入是否已经足够进入最终提示词优化，而不是直接输出优化结果。
+
+          当前优化模式：{mode.Name}
+          当前模式优先关注的补充信息：{GetClarificationFocus(mode.Id)}
+
+          {ClarificationOutputRequirements}
+          """;
+      }
+
+      public string BuildClarificationUserPrompt(string? userPrompt, string? precondition) =>
+        BuildPromptMessage(userPrompt, precondition, "待分析提示词");
+
+      public string BuildOptimizationUserPrompt(
+        string? userPrompt,
+        string? precondition,
+        IReadOnlyList<ClarificationAnswer>? clarifications = null) =>
+        BuildPromptMessage(userPrompt, precondition, "待优化提示词", clarifications);
+
     public PromptMode GetMode(string? id) =>
         _modes.FirstOrDefault(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase)) ?? _modes[0];
 
-    public string GetSystemPrompt(string? id) => GetMode(id).SystemPrompt;
+      public string GetSystemPrompt(string? id) => GetOptimizationSystemPrompt(id);
+
+      private static string BuildPromptMessage(
+        string? userPrompt,
+        string? precondition,
+        string promptSectionTitle,
+        IReadOnlyList<ClarificationAnswer>? clarifications = null)
+      {
+        var normalizedPrecondition = (precondition ?? string.Empty).Trim();
+        var hasClarifications = clarifications is { Count: > 0 };
+
+        if (string.IsNullOrEmpty(normalizedPrecondition) && !hasClarifications)
+        {
+          return userPrompt ?? string.Empty;
+        }
+
+        var sections = new List<string>();
+
+        if (!string.IsNullOrEmpty(normalizedPrecondition))
+        {
+          sections.Add($"【全局前置条件】\n{normalizedPrecondition}");
+        }
+
+        sections.Add($"【{promptSectionTitle}】\n{userPrompt ?? string.Empty}");
+
+        if (hasClarifications)
+        {
+          sections.Add(BuildClarificationsSection(clarifications!));
+        }
+
+        return string.Join("\n\n", sections);
+      }
+
+      private static string BuildClarificationsSection(IReadOnlyList<ClarificationAnswer> clarifications)
+      {
+        var builder = new StringBuilder("【用户补充信息】\n");
+
+        for (var index = 0; index < clarifications.Count; index++)
+        {
+          var answer = clarifications[index];
+          builder.Append(index + 1)
+            .Append(". 问题：")
+            .AppendLine(answer.Question ?? string.Empty)
+            .Append("   回答：")
+            .AppendLine(FormatClarificationAnswer(answer));
+
+          if (index < clarifications.Count - 1)
+          {
+            builder.AppendLine();
+          }
+        }
+
+        return builder.ToString().TrimEnd();
+      }
+
+      private static string FormatClarificationAnswer(ClarificationAnswer answer)
+      {
+        if (string.Equals(answer.AnswerType, "skip", StringComparison.OrdinalIgnoreCase))
+        {
+          return "由 AI 合理假设";
+        }
+
+        if (string.Equals(answer.AnswerType, "custom", StringComparison.OrdinalIgnoreCase))
+        {
+          return answer.AnswerValue ?? string.Empty;
+        }
+
+        return !string.IsNullOrWhiteSpace(answer.AnswerLabel)
+          ? answer.AnswerLabel!
+          : answer.AnswerValue ?? string.Empty;
+      }
+
+      private static string GetClarificationFocus(string modeId) => modeId.ToLowerInvariant() switch
+      {
+        "code" => "技术栈、运行环境、文件范围、已有代码约束、验收标准",
+        "image" => "主体、风格、画面比例、镜头构图、色彩、负面提示词",
+        "writing" => "平台、目标读者、语气风格、篇幅、转化目标",
+        "data" => "数据来源、时间范围、指标定义、分析目标、输出图表",
+        "role" => "角色身份、服务对象、行为边界、语气、禁止事项",
+        "structured" => "目标格式、字段定义、字段类型、示例、校验规则",
+        _ => "目标、受众、使用场景、输出形式、限制条件"
+      };
 }
 
 public class PromptMode

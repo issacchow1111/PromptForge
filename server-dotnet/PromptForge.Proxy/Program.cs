@@ -73,17 +73,17 @@ app.MapGet("/api/health", () =>
 });
 
 // Non-streaming chat proxy
-app.MapPost("/api/proxy/chat", async (ChatRequest req, IUpstreamService upstream, CancellationToken ct) =>
+app.MapPost("/api/proxy/chat", async (ChatRequest req, IUpstreamService upstream, PromptModeRegistry registry, CancellationToken ct) =>
 {
-    var upstreamRequest = BuildUpstreamRequest(req, builder.Configuration);
+    var upstreamRequest = BuildUpstreamRequest(req, builder.Configuration, registry);
     var data = await upstream.PostChatCompletionAsync(upstreamRequest, ct);
     return Results.Json(new { success = true, data }, jsonOptions);
 });
 
 // Streaming chat proxy
-app.MapPost("/api/proxy/chat/stream", async (ChatRequest req, IUpstreamService upstream, HttpContext context, CancellationToken ct) =>
+app.MapPost("/api/proxy/chat/stream", async (ChatRequest req, IUpstreamService upstream, PromptModeRegistry registry, HttpContext context, CancellationToken ct) =>
 {
-    var upstreamRequest = BuildUpstreamRequest(req, builder.Configuration);
+    var upstreamRequest = BuildUpstreamRequest(req, builder.Configuration, registry);
     upstreamRequest.Stream = true;
 
     context.Response.StatusCode = StatusCodes.Status200OK;
@@ -105,9 +105,8 @@ app.MapPost("/api/proxy/chat/stream", async (ChatRequest req, IUpstreamService u
 
 app.Run();
 
-static OpenAIChatCompletionRequest BuildUpstreamRequest(ChatRequest req, IConfiguration config)
+static OpenAIChatCompletionRequest BuildUpstreamRequest(ChatRequest req, IConfiguration config, PromptModeRegistry registry)
 {
-    var registry = new PromptModeRegistry();
     var model = config["Proxy:Model"] ?? throw new InvalidOperationException("Proxy:Model is not configured");
 
     List<OpenAIMessage> messages;
@@ -131,12 +130,29 @@ static OpenAIChatCompletionRequest BuildUpstreamRequest(ChatRequest req, IConfig
             new OpenAIMessage { Role = "user", Content = JsonSerializer.Serialize(iterationContext, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }) }
         ];
     }
-    else
+    else if (string.Equals(req.Type, "clarify", StringComparison.OrdinalIgnoreCase))
     {
         messages =
         [
-            new OpenAIMessage { Role = "system", Content = registry.GetSystemPrompt(req.ModeId) },
-            new OpenAIMessage { Role = "user", Content = BuildPromptMessage(req.UserPrompt, req.Precondition) }
+            new OpenAIMessage { Role = "system", Content = registry.GetClarificationSystemPrompt(req.ModeId) },
+            new OpenAIMessage { Role = "user", Content = registry.BuildClarificationUserPrompt(req.UserPrompt, req.Precondition) }
+        ];
+    }
+    else
+    {
+        var includeClarifications = string.Equals(req.Type, "optimizeWithClarifications", StringComparison.OrdinalIgnoreCase);
+
+        messages =
+        [
+            new OpenAIMessage { Role = "system", Content = registry.GetOptimizationSystemPrompt(req.ModeId, includeClarifications) },
+            new OpenAIMessage
+            {
+                Role = "user",
+                Content = registry.BuildOptimizationUserPrompt(
+                    req.UserPrompt,
+                    req.Precondition,
+                    includeClarifications ? req.Clarifications : null)
+            }
         ];
     }
 
@@ -145,15 +161,4 @@ static OpenAIChatCompletionRequest BuildUpstreamRequest(ChatRequest req, IConfig
         Model = model,
         Messages = messages
     };
-}
-
-static string BuildPromptMessage(string? userPrompt, string? precondition)
-{
-    var normalizedPrecondition = (precondition ?? string.Empty).Trim();
-    if (string.IsNullOrEmpty(normalizedPrecondition))
-    {
-        return userPrompt ?? string.Empty;
-    }
-
-    return $"【全局前置条件】\n{normalizedPrecondition}\n\n【待优化提示词】\n{userPrompt ?? string.Empty}";
 }

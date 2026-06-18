@@ -358,7 +358,21 @@
     />
 
     <!-- Thinking Overlay -->
-    <ThinkingOverlay :show="isThinking" :streaming-text="streamingText" @stop="handleStopThinking" />
+    <ThinkingOverlay
+      :show="isThinking"
+      :phase="optimizationPhase"
+      :streaming-text="streamingText"
+      :clarify-question="currentClarifyQuestion"
+      :clarify-index="currentClarifyIndex + 1"
+      :clarify-total="clarifyQuestions.length"
+      :clarify-selection="clarifySelection"
+      :clarify-custom-value="clarifyCustomValue"
+      @stop="handleStopThinking"
+      @select-clarify-option="handleSelectClarifyOption"
+      @update:clarify-custom-value="clarifyCustomValue = $event"
+      @next-clarify="handleNextClarify"
+      @skip-clarify="handleSkipClarify"
+    />
 
     <!-- Footer -->
     <footer class="site-footer">
@@ -415,7 +429,7 @@ import HistoryModal from './components/HistoryModal.vue'
 import PreconditionModal from './components/PreconditionModal.vue'
 import ThinkingOverlay from './components/ThinkingOverlay.vue'
 import { getConfig, saveConfig, clearConfig, getSelectedMode, saveSelectedMode, getHistory, addToHistory, updateHistoryItem, deleteFromHistory, getPrecondition, savePrecondition, clearPrecondition, searchHistory, exportData, importData } from './utils/storage.js'
-import { hasCompleteOptimizationReport, streamOptimizeOrIterate, parseOptimizationResult } from './utils/api.js'
+import { hasCompleteOptimizationReport, streamOptimizeOrIterate, streamOptimizeWithClarifications, parseOptimizationResult } from './utils/api.js'
 import { extractOptimizedPrompt } from './utils/streamParser.js'
 import { copyToClipboard } from './utils/clipboard.js'
 import { DEFAULT_PROMPT_MODE_ID, PROMPT_MODES, getPromptMode } from './utils/promptModes.js'
@@ -435,6 +449,7 @@ const activePreconditionSnapshot = ref('')
 const isLoading = ref(false)
 const isIterating = ref(false)
 const isThinking = ref(false)
+const optimizationPhase = ref('idle')
 const abortController = ref(null)
 const streamingText = ref('')
 const error = ref('')
@@ -450,8 +465,14 @@ const drawerPanelRef = ref(null)
 const drawerContentRef = ref(null)
 const proxyReachable = ref(false)
 const proxyConfigured = ref(false)
+const clarifyQuestions = ref([])
+const clarifyAnswers = ref([])
+const currentClarifyIndex = ref(0)
+const clarifySelection = ref('')
+const clarifyCustomValue = ref('')
 const proxyAvailable = computed(() => proxyReachable.value && proxyConfigured.value)
 const hasDirectConfig = computed(() => Boolean(config.value?.apiKey && config.value?.baseURL && config.value?.model))
+const currentClarifyQuestion = computed(() => clarifyQuestions.value[currentClarifyIndex.value] || null)
 
 // Initialize filtered history whenever history changes
 watch(history, (newHistory) => {
@@ -475,6 +496,8 @@ const modalPlaceholder = ref('')
 const modalPending = ref(false)
 let modalCallback = null
 let historySearchId = 0
+let clarificationResolve = null
+let clarificationReject = null
 
 // Toast state
 const toast = ref({ show: false, message: '', type: 'info' })
@@ -605,6 +628,133 @@ async function handlePreconditionClear () {
   }
 }
 
+function setOptimizationPhase (phase) {
+  optimizationPhase.value = phase
+  isThinking.value = phase !== 'idle'
+  if (phase !== 'generating') {
+    streamingText.value = ''
+  }
+}
+
+function resetClarificationState () {
+  clarifyQuestions.value = []
+  clarifyAnswers.value = []
+  currentClarifyIndex.value = 0
+  clarifySelection.value = ''
+  clarifyCustomValue.value = ''
+  clarificationResolve = null
+  clarificationReject = null
+}
+
+function rejectPendingClarification (reason = new DOMException('The operation was aborted.', 'AbortError')) {
+  const reject = clarificationReject
+  clarificationResolve = null
+  clarificationReject = null
+  if (reject) {
+    reject(reason)
+  }
+}
+
+function beginClarificationSession (questions) {
+  const normalizedQuestions = Array.isArray(questions) ? questions : []
+  if (normalizedQuestions.length === 0) {
+    resetClarificationState()
+    return Promise.resolve([])
+  }
+
+  clarifyQuestions.value = normalizedQuestions
+  clarifyAnswers.value = []
+  currentClarifyIndex.value = 0
+  clarifySelection.value = ''
+  clarifyCustomValue.value = ''
+  setOptimizationPhase('clarifying')
+
+  return new Promise((resolve, reject) => {
+    clarificationResolve = resolve
+    clarificationReject = reject
+  })
+}
+
+function isCurrentCustomClarification () {
+  const question = currentClarifyQuestion.value
+  const options = Array.isArray(question?.options) ? question.options : []
+  if (options.length === 0) {
+    return true
+  }
+  return clarifySelection.value === options[options.length - 1]?.value
+}
+
+function commitClarificationAnswer (entry) {
+  const nextAnswers = [...clarifyAnswers.value, entry]
+  clarifyAnswers.value = nextAnswers
+
+  if (currentClarifyIndex.value >= clarifyQuestions.value.length - 1) {
+    const resolve = clarificationResolve
+    clarificationResolve = null
+    clarificationReject = null
+    if (resolve) {
+      resolve(nextAnswers)
+    }
+    return
+  }
+
+  currentClarifyIndex.value += 1
+  clarifySelection.value = ''
+  clarifyCustomValue.value = ''
+}
+
+function handleSelectClarifyOption (option) {
+  clarifySelection.value = typeof option?.value === 'string'
+    ? option.value
+    : typeof option === 'string'
+      ? option
+      : ''
+  if (!isCurrentCustomClarification()) {
+    clarifyCustomValue.value = ''
+  }
+}
+
+function handleNextClarify () {
+  const question = currentClarifyQuestion.value
+  if (!question) return
+
+  const options = Array.isArray(question.options) ? question.options : []
+  const selectedOption = clarifySelection.value.trim()
+  const customValue = clarifyCustomValue.value.trim()
+  const customOption = options[options.length - 1] || null
+  const selectedOptionObject = options.find(option => option.value === selectedOption) || null
+  const isCustomAnswer = options.length === 0 || (selectedOption && selectedOption === customOption?.value)
+
+  if (options.length > 0 && !selectedOption) {
+    return
+  }
+
+  if (isCustomAnswer && !customValue) {
+    return
+  }
+
+  commitClarificationAnswer({
+    questionId: question.id,
+    question: question.question,
+    answerType: isCustomAnswer ? 'custom' : 'option',
+    answerLabel: isCustomAnswer ? (customOption?.label || '其他/自定义') : (selectedOptionObject?.label || ''),
+    answerValue: isCustomAnswer ? customValue : (selectedOptionObject?.value || '')
+  })
+}
+
+function handleSkipClarify () {
+  const question = currentClarifyQuestion.value
+  if (!question) return
+
+  commitClarificationAnswer({
+    questionId: question.id,
+    question: question.question,
+    answerType: 'skip',
+    answerLabel: '跳过，由 AI 合理假设',
+    answerValue: 'AI_REASONABLE_ASSUMPTION'
+  })
+}
+
 // Optimize handler
 async function handleOptimize (prompt) {
   if (!hasDirectConfig.value && !proxyAvailable.value) {
@@ -620,8 +770,7 @@ async function handleOptimize (prompt) {
   const controller = new AbortController()
   abortController.value = controller
   isLoading.value = true
-  isThinking.value = true
-  streamingText.value = ''
+  setOptimizationPhase('thinking')
   error.value = ''
   optimizedResult.value = ''
   optimizationResult.value = null
@@ -629,10 +778,11 @@ async function handleOptimize (prompt) {
   iterationHistory.value = []
   activeIterationId.value = null
   activePreconditionSnapshot.value = ''
+  resetClarificationState()
   const preconditionSnapshot = precondition.value
 
   try {
-    const rawContent = await streamOptimizeOrIterate(
+    const { rawContent } = await streamOptimizeWithClarifications(
       config.value,
       {
         type: 'optimize',
@@ -640,8 +790,14 @@ async function handleOptimize (prompt) {
         userPrompt: prompt,
         precondition: preconditionSnapshot
       },
-      (accumulatedText) => {
-        streamingText.value = extractOptimizedPrompt(accumulatedText)
+      {
+        onPhaseChange: (phase) => {
+          setOptimizationPhase(phase)
+        },
+        onClarifications: beginClarificationSession,
+        onChunk: (accumulatedText) => {
+          streamingText.value = extractOptimizedPrompt(accumulatedText)
+        }
       },
       controller.signal
     )
@@ -676,7 +832,8 @@ async function handleOptimize (prompt) {
       showToast(e.message, 'error')
     }
   } finally {
-    isThinking.value = false
+    setOptimizationPhase('idle')
+    resetClarificationState()
     isLoading.value = false
     abortController.value = null
   }
@@ -696,13 +853,26 @@ function handleRetry () {
 function handleStopThinking () {
   if (abortController.value) {
     abortController.value.abort()
-    abortController.value = null
   }
-  streamingText.value = ''
+  rejectPendingClarification()
+  abortController.value = null
+  isLoading.value = false
+  isIterating.value = false
+  setOptimizationPhase('idle')
+  resetClarificationState()
 }
 
 // Clear prompt handler
 function handleClearPrompt () {
+  if (abortController.value) {
+    abortController.value.abort()
+  }
+  rejectPendingClarification()
+  abortController.value = null
+  setOptimizationPhase('idle')
+  resetClarificationState()
+  isLoading.value = false
+  isIterating.value = false
   optimizedResult.value = ''
   optimizationResult.value = null
   originalPrompt.value = ''
@@ -736,7 +906,7 @@ async function handleIterate (instruction) {
   const controller = new AbortController()
   abortController.value = controller
   isIterating.value = true
-  isThinking.value = true
+  setOptimizationPhase('generating')
   streamingText.value = ''
   error.value = ''
 
@@ -785,7 +955,7 @@ async function handleIterate (instruction) {
       showToast(e.message || '继续迭代失败，已保留当前版本', 'error')
     }
   } finally {
-    isThinking.value = false
+    setOptimizationPhase('idle')
     isIterating.value = false
     abortController.value = null
   }

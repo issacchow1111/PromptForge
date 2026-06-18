@@ -1,11 +1,47 @@
 <template>
   <Transition name="thinking">
     <div v-if="show" class="thinking-overlay">
-      <div class="thinking-content" :class="{ 'has-text': streamingText }">
-        <p class="thinking-label">AI正在思考...</p>
+      <div class="thinking-content" :class="{ 'has-text': streamingText, 'is-clarifying': phase === 'clarifying' }">
+        <p class="thinking-label">{{ phaseLabel }}</p>
+
+        <div v-if="phase === 'clarifying' && clarifyQuestion" class="clarify-panel">
+          <div class="clarify-progress">第 {{ clarifyIndex }} / {{ clarifyTotal }} 个问题</div>
+          <p class="clarify-question">{{ clarifyQuestion.question }}</p>
+
+          <div v-if="clarifyOptions.length" class="clarify-options">
+            <button
+              v-for="option in clarifyOptions"
+              :key="option.value"
+              class="clarify-option"
+              :class="{ active: clarifySelection === option.value }"
+              @click="$emit('select-clarify-option', option)"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+
+          <div v-if="showCustomInput" class="clarify-custom">
+            <textarea
+              class="clarify-textarea"
+              rows="4"
+              :value="clarifyCustomValue"
+              placeholder="请输入你的补充说明"
+              @input="$emit('update:clarify-custom-value', $event.target.value)"
+            ></textarea>
+          </div>
+
+          <div class="clarify-actions">
+            <button class="clarify-action ghost" @click="$emit('skip-clarify')">
+              跳过，由 AI 合理假设
+            </button>
+            <button class="clarify-action primary" :disabled="nextDisabled" @click="$emit('next-clarify')">
+              {{ clarifyIndex === clarifyTotal ? '开始生成' : '下一题' }}
+            </button>
+          </div>
+        </div>
 
         <!-- Streaming text area -->
-        <div v-if="streamingText" ref="textArea" class="thinking-stream">
+        <div v-else-if="streamingText" ref="textArea" class="thinking-stream">
           <pre class="thinking-stream-content">{{ streamingText }}</pre>
         </div>
 
@@ -28,22 +64,78 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 
 const props = defineProps({
   show: {
     type: Boolean,
     default: false
   },
+  phase: {
+    type: String,
+    default: 'thinking'
+  },
   streamingText: {
+    type: String,
+    default: ''
+  },
+  clarifyQuestion: {
+    type: Object,
+    default: null
+  },
+  clarifyIndex: {
+    type: Number,
+    default: 1
+  },
+  clarifyTotal: {
+    type: Number,
+    default: 0
+  },
+  clarifySelection: {
+    type: String,
+    default: ''
+  },
+  clarifyCustomValue: {
     type: String,
     default: ''
   }
 })
 
-defineEmits(['stop'])
+defineEmits(['stop', 'select-clarify-option', 'update:clarify-custom-value', 'next-clarify', 'skip-clarify'])
 
 const textArea = ref(null)
+const clarifyOptions = computed(() => Array.isArray(props.clarifyQuestion?.options) ? props.clarifyQuestion.options : [])
+const showCustomInput = computed(() => {
+  if (clarifyOptions.value.length === 0) {
+    return props.phase === 'clarifying'
+  }
+
+  return props.clarifySelection === clarifyOptions.value[clarifyOptions.value.length - 1]?.value
+})
+const nextDisabled = computed(() => {
+  if (props.phase !== 'clarifying') {
+    return false
+  }
+
+  if (clarifyOptions.value.length > 0 && !props.clarifySelection) {
+    return true
+  }
+
+  if (showCustomInput.value) {
+    return !props.clarifyCustomValue.trim()
+  }
+
+  return false
+})
+const phaseLabel = computed(() => {
+  if (props.phase === 'clarifying') {
+    return 'AI 需要你补充关键信息'
+  }
+  if (props.phase === 'generating') {
+    return 'AI 正在生成优化结果...'
+  }
+  return 'AI 正在分析提示词...'
+})
 
 watch(() => props.streamingText, async () => {
   await nextTick()
@@ -81,6 +173,10 @@ watch(() => props.streamingText, async () => {
   align-items: stretch;
 }
 
+.thinking-content.is-clarifying {
+  align-items: stretch;
+}
+
 .thinking-label {
   color: rgba(255, 255, 255, 0.7);
   font-size: 0.92rem;
@@ -93,6 +189,107 @@ watch(() => props.streamingText, async () => {
 .thinking-dots {
   display: flex;
   gap: 8px;
+}
+
+.clarify-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  padding: 24px;
+  border-radius: 20px;
+  background: rgba(16, 24, 40, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.24);
+}
+
+.clarify-progress {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+}
+
+.clarify-question {
+  margin: 0;
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.clarify-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.clarify-option {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.88);
+  font: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clarify-option:hover,
+.clarify-option.active {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
+}
+
+.clarify-custom {
+  width: 100%;
+}
+
+.clarify-textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 112px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  line-height: 1.6;
+}
+
+.clarify-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.clarify-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.clarify-action {
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  font: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clarify-action.ghost {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.clarify-action.primary {
+  background: rgba(255, 255, 255, 0.92);
+  color: #101828;
+  border-color: transparent;
+}
+
+.clarify-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .dot {
@@ -159,6 +356,20 @@ watch(() => props.streamingText, async () => {
   background: rgba(255, 255, 255, 0.2);
   color: #fff;
   border-color: rgba(255, 255, 255, 0.4);
+}
+
+@media (max-width: 640px) {
+  .clarify-panel {
+    padding: 20px;
+  }
+
+  .clarify-actions {
+    flex-direction: column;
+  }
+
+  .clarify-action {
+    width: 100%;
+  }
 }
 
 /* Transition */

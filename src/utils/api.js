@@ -38,6 +38,65 @@ JSON 结构必须符合：
   "optimizedPrompt": "迭代后的提示词正文"
 }`
 
+const CLARIFICATION_AWARE_REQUIREMENTS = `补充要求：
+1. 如果上下文中包含“用户补充信息”，你必须将其用于完善最终结果。
+2. 对标记为“由 AI 合理假设”的问题，你可以做合理假设，但不要在最终 optimizedPrompt 中暴露澄清过程。
+3. 最终 optimizedPrompt 不要出现“根据你的回答”“你刚才选择了”等过程性表达，除非用户任务本身要求展示该过程。`
+
+const CLARIFICATION_FOCUS_BY_MODE = {
+  general: '目标、受众、使用场景、输出形式、限制条件',
+  code: '技术栈、运行环境、文件范围、已有代码约束、验收标准',
+  image: '主体、风格、画面比例、镜头/构图、色彩、负面提示词',
+  writing: '平台、目标读者、语气风格、篇幅、转化目标',
+  data: '数据来源、时间范围、指标定义、分析目标、输出图表',
+  role: '角色身份、服务对象、行为边界、语气、禁止事项',
+  structured: '目标格式、字段定义、字段类型、示例、校验规则'
+}
+
+const CLARIFICATION_MODE_NAME_BY_ID = {
+  general: '通用优化',
+  code: '代码生成',
+  image: '图像生成',
+  writing: '内容写作',
+  data: '数据分析',
+  role: '角色设定',
+  structured: '结构化输出'
+}
+
+const CLARIFICATION_SYSTEM_PROMPT = `你是一个专业的 AI 提示词分析师。你的职责是判断当前输入是否已经足够进入最终提示词优化，而不是直接输出优化结果。
+
+输出要求：
+1. 必须只返回合法 JSON，不要返回 Markdown 代码块，不要在 JSON 前后添加解释。
+2. 不要因为提示词较短就默认追问；如果只是轻微缺失，请直接判定为不需要追问。
+3. needsClarification=false 时，questions 必须返回空数组。
+4. needsClarification=true 时，questions 必须返回 1 到 5 个问题，能少问就少问，只问最影响最终优化结果的关键问题。
+5. 每个问题必须包含 id、question、type、options、required 字段。
+6. type 固定为 single_choice。
+7. 每题 options 数量控制在 2 到 5 个，最后一个选项固定为 {"label":"其他/自定义","value":"__custom__"}。
+8. 不要把“跳过，由 AI 合理假设”放进 options，这个按钮由前端提供。
+
+JSON 结构必须符合：
+{
+  "needsClarification": true,
+  "reason": "说明为什么需要或不需要澄清",
+  "questions": [
+    {
+      "id": "question_id",
+      "question": "问题内容",
+      "type": "single_choice",
+      "options": [
+        { "label": "选项 1", "value": "value_1" },
+        { "label": "其他/自定义", "value": "__custom__" }
+      ],
+      "required": false
+    }
+  ]
+}`
+
+function hasCompleteDirectConfig (config) {
+  return Boolean(config?.apiKey && config?.baseURL && config?.model)
+}
+
 function createFallbackResult (rawContent = '') {
   return {
     diagnosis: null,
@@ -172,15 +231,46 @@ export function hasCompleteOptimizationReport (result) {
   )
 }
 
-function createPromptMessage (userPrompt, precondition = '') {
-  const normalizedPrecondition = String(precondition || '').trim()
-  if (!normalizedPrecondition) return userPrompt
+function formatClarifications (clarifications = []) {
+  if (!Array.isArray(clarifications) || clarifications.length === 0) {
+    return ''
+  }
 
-  return `【全局前置条件】\n${normalizedPrecondition}\n\n【待优化提示词】\n${userPrompt}`
+  return clarifications
+    .map((item, index) => {
+      const question = String(item?.question || '').trim()
+      const answer = item?.answerType === 'skip'
+        ? '由 AI 合理假设'
+        : String(item?.answerLabel || item?.answerValue || '').trim()
+      if (!question || !answer) return ''
+      return `${index + 1}. ${question}\n回答：${answer}`
+    })
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function createUserPromptWithClarifications (userPrompt, clarifications = []) {
+  const normalizedPrompt = String(userPrompt || '')
+  const clarificationBlock = formatClarifications(clarifications)
+
+  if (!clarificationBlock) {
+    return normalizedPrompt
+  }
+
+  return `${normalizedPrompt}\n\n【澄清补充信息】\n${clarificationBlock}`
+}
+
+function createPromptMessage (userPrompt, precondition = '', clarifications = []) {
+  const normalizedPrecondition = String(precondition || '').trim()
+  const normalizedPrompt = createUserPromptWithClarifications(userPrompt, clarifications)
+
+  if (!normalizedPrecondition) return normalizedPrompt
+
+  return `【全局前置条件】\n${normalizedPrecondition}\n\n【待优化提示词】\n${normalizedPrompt}`
 }
 
 export function shouldUseProxy (config) {
-  return !config?.apiKey
+  return !hasCompleteDirectConfig(config)
 }
 
 function validateDirectConfig (config) {
@@ -230,10 +320,15 @@ function handleNetworkError (error) {
 }
 
 function parseProxyResponse (data) {
+  const content = extractAssistantMessageContent(data)
+  return parseOptimizationResult(content)
+}
+
+function extractAssistantMessageContent (data) {
   if (!data || !data.choices || !data.choices[0] || !data.choices[0].message) {
     throw new Error('代理返回数据格式异常，请检查服务端配置')
   }
-  return parseOptimizationResult(data.choices[0].message.content)
+  return data.choices[0].message.content || ''
 }
 
 async function handleProxyError (response) {
@@ -245,6 +340,253 @@ async function handleProxyError (response) {
     // ignore parse error
   }
   throw new Error(message)
+}
+
+function createRequestSession (config) {
+  const transportMode = shouldUseProxy(config) ? 'proxy' : 'direct'
+
+  return {
+    transportMode,
+    configSnapshot: transportMode === 'direct'
+      ? {
+          baseURL: config.baseURL,
+          apiKey: config.apiKey,
+          model: config.model
+        }
+      : null
+  }
+}
+
+function resolveRequestSession (config, session = null) {
+  return session || createRequestSession(config)
+}
+
+function getDirectRequestConfig (session, fallbackConfig = null) {
+  return session?.configSnapshot || fallbackConfig || {}
+}
+
+function getClarificationFocus (modeId = DEFAULT_PROMPT_MODE_ID) {
+  return CLARIFICATION_FOCUS_BY_MODE[modeId] || CLARIFICATION_FOCUS_BY_MODE.general
+}
+
+function getDirectClarificationSystemPrompt (modeId = DEFAULT_PROMPT_MODE_ID) {
+  const modeName = CLARIFICATION_MODE_NAME_BY_ID[modeId] || CLARIFICATION_MODE_NAME_BY_ID.general
+  return `${CLARIFICATION_SYSTEM_PROMPT}\n\n当前优化模式：${modeName}\n当前模式优先关注的补充信息：${getClarificationFocus(modeId)}\n问题必须与当前优化模式相关，避免泛泛追问。`
+}
+
+function getDirectOptimizationSystemPrompt (modeId = DEFAULT_PROMPT_MODE_ID, includeClarifications = false) {
+  const basePrompt = getSystemPrompt(modeId)
+  return includeClarifications ? `${basePrompt}\n\n${CLARIFICATION_AWARE_REQUIREMENTS}` : basePrompt
+}
+
+function createClarifyUserMessage (payload) {
+  return createPromptMessage(payload.userPrompt, payload.precondition)
+}
+
+function createEmptyClarificationResult (reason = '') {
+  return {
+    needsClarification: false,
+    reason,
+    questions: []
+  }
+}
+
+function normalizeClarificationOption (option) {
+  if (typeof option === 'string') {
+    const label = option.trim()
+    if (!label) return null
+    return {
+      label,
+      value: label === '其他/自定义' ? '__custom__' : label
+    }
+  }
+
+  if (!option || typeof option !== 'object') {
+    return null
+  }
+
+  const label = String(option.label || '').trim()
+  const value = String(option.value || '').trim()
+  if (!label || !value) {
+    return null
+  }
+
+  return { label, value }
+}
+
+function ensureCustomOptionAtEnd (options) {
+  const normalized = options.filter(Boolean)
+  const regularOptions = normalized.filter(option => option.value !== '__custom__' && option.label !== '其他/自定义')
+  const customOption = normalized.find(option => option.value === '__custom__' || option.label === '其他/自定义') || { label: '其他/自定义', value: '__custom__' }
+  return [...regularOptions.slice(0, 4), customOption]
+}
+
+function normalizeClarificationQuestions (questions) {
+  if (!Array.isArray(questions)) {
+    return []
+  }
+
+  return questions
+    .map((item, index) => {
+      const id = typeof item?.id === 'string' && item.id.trim()
+        ? item.id.trim()
+        : `clarification_${index + 1}`
+      const question = typeof item === 'string'
+        ? item.trim()
+        : typeof item?.question === 'string'
+          ? item.question.trim()
+          : ''
+      const rawOptions = Array.isArray(item?.options)
+        ? item.options
+        : Array.isArray(item?.choices)
+          ? item.choices
+          : []
+      const options = ensureCustomOptionAtEnd(rawOptions
+        .map(normalizeClarificationOption)
+        .filter(Boolean))
+
+      if (!question) {
+        return null
+      }
+
+      return {
+        id,
+        question,
+        type: 'single_choice',
+        options,
+        required: Boolean(item?.required)
+      }
+    })
+    .filter(Boolean)
+    .slice(0, 5)
+}
+
+function parseClarificationResult (content) {
+  const rawContent = String(content || '')
+  const jsonContent = extractJsonContent(rawContent)
+  const attempts = [jsonContent, repairJson(jsonContent)]
+
+  for (const text of attempts) {
+    try {
+      const parsed = JSON.parse(text)
+      const questions = normalizeClarificationQuestions(parsed?.questions)
+      const needsClarification = Boolean(parsed?.needsClarification) && questions.length > 0
+      return {
+        needsClarification,
+        reason: typeof parsed?.reason === 'string' ? parsed.reason : '',
+        questions: needsClarification ? questions : []
+      }
+    } catch {
+      // try next repair
+    }
+  }
+
+  return createEmptyClarificationResult()
+}
+
+export async function clarifyPrompt (config, payload, signal = null, requestSession = null) {
+  const session = resolveRequestSession(config, requestSession)
+  const modeId = payload.modeId || DEFAULT_PROMPT_MODE_ID
+
+  if (session.transportMode === 'direct') {
+    const { baseURL, apiKey, model } = getDirectRequestConfig(session)
+    const url = `${baseURL.replace(/\/$/, '')}/chat/completions`
+
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: getDirectClarificationSystemPrompt(modeId) },
+          { role: 'user', content: createClarifyUserMessage(payload) }
+        ]
+      }),
+      signal
+    })
+
+    if (!response.ok) {
+      let errorMessage = `请求失败: ${response.status}`
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.error?.message
+          || errorData.error?.code
+          || errorData.message
+          || `请求失败 (${response.status})`
+      } catch {
+        if (response.status === 401) errorMessage = 'API Key 无效或已过期'
+        else if (response.status === 429) errorMessage = '请求过于频繁，请稍后重试'
+        else if (response.status === 500) errorMessage = '服务器内部错误，请稍后重试'
+        else if (response.status === 503) errorMessage = '服务暂不可用，请稍后重试'
+      }
+      throw new Error(errorMessage)
+    }
+
+    const data = await response.json()
+    return parseClarificationResult(extractAssistantMessageContent(data))
+  }
+
+  const response = await fetchWithTimeout('/api/proxy/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      modeId,
+      type: 'clarify',
+      userPrompt: payload.userPrompt || '',
+      precondition: payload.precondition || ''
+    }),
+    signal
+  })
+
+  if (!response.ok) {
+    await handleProxyError(response)
+  }
+
+  const result = await response.json()
+  return parseClarificationResult(extractAssistantMessageContent(result.data))
+}
+
+export async function streamOptimizeWithClarifications (config, payload, handlers = {}, signal = null) {
+  try {
+    const session = createRequestSession(config)
+    handlers.onPhaseChange?.('thinking')
+
+    const clarification = await clarifyPrompt(config, payload, signal, session)
+    const clarificationResult = clarification.needsClarification
+      ? await handlers.onClarifications?.(clarification.questions)
+      : []
+    const clarifications = Array.isArray(clarificationResult) ? clarificationResult : []
+
+    if (signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError')
+    }
+
+    handlers.onPhaseChange?.('generating')
+
+    const rawContent = await streamOptimizeOrIterate(
+      getDirectRequestConfig(session, config),
+      {
+        ...payload,
+        clarifications
+      },
+      handlers.onChunk,
+      signal,
+      session
+    )
+
+    return {
+      rawContent,
+      clarification,
+      clarifications,
+      transportMode: session.transportMode,
+      configSnapshot: session.configSnapshot ? { ...session.configSnapshot } : null
+    }
+  } catch (error) {
+    handleNetworkError(error)
+  }
 }
 
 /**
@@ -443,13 +785,15 @@ export async function iteratePrompt (config, payload, signal = null) {
  * @param {AbortSignal} [signal] - 外部中断信号
  * @returns {Promise<string>} 完整的原始响应文本
  */
-export async function streamOptimizeOrIterate (config, payload, onChunk, signal = null) {
+export async function streamOptimizeOrIterate (config, payload, onChunk, signal = null, requestSession = null) {
   try {
-    const useProxy = shouldUseProxy(config)
+    const session = resolveRequestSession(config, requestSession)
+    const useProxy = session.transportMode === 'proxy'
     const isIteration = payload.type === 'iteration'
+    const hasClarifications = Array.isArray(payload.clarifications) && payload.clarifications.length > 0
 
     if (!useProxy) {
-      const { baseURL, apiKey, model } = config || {}
+      const { baseURL, apiKey, model } = getDirectRequestConfig(session, config)
       if (!baseURL || !apiKey || !model) {
         throw new Error('API 配置不完整')
       }
@@ -469,8 +813,8 @@ export async function streamOptimizeOrIterate (config, payload, onChunk, signal 
               }, null, 2) }
           ]
         : [
-            { role: 'system', content: getSystemPrompt(payload.modeId || DEFAULT_PROMPT_MODE_ID) },
-            { role: 'user', content: createPromptMessage(payload.userPrompt, payload.precondition) }
+            { role: 'system', content: getDirectOptimizationSystemPrompt(payload.modeId || DEFAULT_PROMPT_MODE_ID, hasClarifications) },
+            { role: 'user', content: createPromptMessage(payload.userPrompt, payload.precondition, payload.clarifications) }
           ]
 
       return streamFromResponse(
@@ -503,7 +847,8 @@ export async function streamOptimizeOrIterate (config, payload, onChunk, signal 
           modeId: payload.modeId || DEFAULT_PROMPT_MODE_ID,
           userPrompt: payload.userPrompt,
           precondition: payload.precondition || '',
-          type: 'optimize'
+          clarifications: hasClarifications ? payload.clarifications : undefined,
+          type: hasClarifications ? 'optimizeWithClarifications' : 'optimize'
         })
 
     return streamFromResponse(
