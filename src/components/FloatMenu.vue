@@ -133,6 +133,15 @@
                 </div>
               </div>
 
+              <div class="privacy-inline">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <path d="M9 12l2 2 4-5" />
+                </svg>
+                <span>配置默认保存在本地浏览器。</span>
+                <button type="button" @click="emit('openPrivacy')">查看隐私说明</button>
+              </div>
+
               <p v-if="props.proxyConfigured && !hasUserKey" class="proxy-hint">
                 未填写 API Key，将使用服务端代理发送请求
               </p>
@@ -148,6 +157,19 @@
         </div>
 
         <!-- Divider -->
+        <div class="menu-divider"></div>
+
+        <!-- Privacy Section -->
+        <div class="menu-section menu-section-compact">
+          <button class="menu-link-row" type="button" @click="emit('openPrivacy')">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="M9 12l2 2 4-5" />
+            </svg>
+            <span>隐私与数据说明</span>
+          </button>
+        </div>
+
         <div class="menu-divider"></div>
 
         <!-- History Section -->
@@ -282,7 +304,8 @@ const emit = defineEmits([
   'openHistory',
   'view',
   'export',
-  'import'
+  'import',
+  'openPrivacy'
 ])
 
 const isOpen = ref(false)
@@ -562,6 +585,29 @@ defineExpose({
   opacity: 0.7;
 }
 
+.menu-link-row {
+  width: 100%;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.menu-link-row svg {
+  color: var(--accent);
+}
+
+.menu-link-row:hover {
+  color: var(--accent);
+}
+
 .menu-section-icon {
   font-size: 1.1rem;
 }
@@ -592,6 +638,43 @@ defineExpose({
 .menu-status.proxy {
   background: rgba(0, 113, 227, 0.12);
   color: #005bb5;
+}
+
+.privacy-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.privacy-inline svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.privacy-inline span {
+  flex: 1;
+}
+
+.privacy-inline button {
+  flex-shrink: 0;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.privacy-inline button:hover {
+  color: var(--accent-dark);
 }
 
 .menu-badge {

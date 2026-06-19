@@ -94,6 +94,7 @@
       @view="handleOpenHistoryItem"
       @export="handleExport"
       @import="handleImport"
+      @openPrivacy="privacyModalOpen = true"
     />
 
     <!-- Full History Drawer -->
@@ -361,6 +362,11 @@
       @cancel="preconditionModalOpen = false"
     />
 
+    <PrivacyModal
+      :show="privacyModalOpen"
+      @close="privacyModalOpen = false"
+    />
+
     <!-- Thinking Overlay -->
     <ThinkingOverlay
       :show="isThinking"
@@ -412,6 +418,13 @@
             </svg>
             GitHub 仓库
           </a>
+          <button class="footer-link-button" type="button" @click="privacyModalOpen = true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              <path d="M9 12l2 2 4-5" />
+            </svg>
+            隐私说明
+          </button>
         </div>
         <div class="footer-copyright">
           © 2026 PromptForge. Made with ❤️ by issacchow1111
@@ -431,6 +444,7 @@ import Modal from './components/Modal.vue'
 import Toast from './components/Toast.vue'
 import HistoryModal from './components/HistoryModal.vue'
 import PreconditionModal from './components/PreconditionModal.vue'
+import PrivacyModal from './components/PrivacyModal.vue'
 import ThinkingOverlay from './components/ThinkingOverlay.vue'
 import { getConfig, saveConfig, clearConfig, getSelectedMode, saveSelectedMode, getHistory, addToHistory, updateHistoryItem, deleteFromHistory, getPrecondition, savePrecondition, clearPrecondition, searchHistory, exportData, importData } from './utils/storage.js'
 import { hasCompleteOptimizationReport, streamOptimizeOrIterate, streamOptimizeWithClarifications, parseOptimizationResult } from './utils/api.js'
@@ -449,6 +463,7 @@ const iterationHistory = ref([])
 const activeIterationId = ref(null)
 const precondition = ref('')
 const preconditionModalOpen = ref(false)
+const privacyModalOpen = ref(false)
 const activePreconditionSnapshot = ref('')
 const isLoading = ref(false)
 const isIterating = ref(false)
